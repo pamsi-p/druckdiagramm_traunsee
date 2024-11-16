@@ -37,6 +37,9 @@ Run the Streamlit app locally:
 streamlit run weather_sensor_app.py
 ```
 
+Alternatively, access the app online via the following URL:
+[https://weather-and-sensor-data-analysis-app.streamlit.app/](https://weather-and-sensor-data-analysis-app.streamlit.app/)
+
 ## File Structure
 
 - `weather_sensor_app.py`: Main Streamlit application script.
