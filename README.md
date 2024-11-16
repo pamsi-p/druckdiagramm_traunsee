@@ -37,10 +37,6 @@ Run the Streamlit app locally:
 streamlit run weather_sensor_app.py
 ```
 
-## Deployment
-
-The app can be deployed on [Streamlit Community Cloud](https://streamlit.io/cloud) for online access. 
-
 ## File Structure
 
 - `weather_sensor_app.py`: Main Streamlit application script.
