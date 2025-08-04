@@ -49,7 +49,7 @@ def fetch_openmeteo(start, end, lat, lon):
     return df
 
 
-st.title("Druckgradienten, Bewölkung & Wind (AROME)")
+st.title("Traunsee Druckgradient")
 start_date = st.date_input("Startdatum", date.today() - timedelta(days=5))
 end_date = st.date_input("Enddatum", date.today() + timedelta(days=7))
 if end_date < start_date: st.error("Enddatum muss nach Startdatum sein")
@@ -81,8 +81,83 @@ else:
                       xaxis_title="Datum & Stunde",
                       legend=dict(orientation="h", y=-0.2))
     st.plotly_chart(fig, use_container_width=True)
-    # Windoption: Pfeile oder Richtungsplot
-    st.subheader("Windrichtung & -stärke (eine Stelle, z.B. Traunkirchen)")
-    st.line_chart(df[["wind_speed"]])
-    st.write("Richtung [°]:")
-    st.line_chart(df["wind_dir"])
+
+
+# Beispiel-Daten, ersetze mit deinem df
+# df = dfs["Traunkirchen"] usw.
+
+fig = go.Figure()
+
+# Wolkenanteile als gestapelte Flächen
+fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["cloud_low"],
+    mode='lines',
+    name='Wolken unten',
+    stackgroup='cloud',
+    line=dict(width=0.5, color='lightblue'),
+))
+fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["cloud_mid"],
+    mode='lines',
+    name='Wolken Mitte',
+    stackgroup='cloud',
+    line=dict(width=0.5, color='deepskyblue'),
+))
+fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["cloud_high"],
+    mode='lines',
+    name='Wolken oben',
+    stackgroup='cloud',
+    line=dict(width=0.5, color='dodgerblue'),
+))
+
+# Windgeschwindigkeit als Linie
+fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["wind_speed"],
+    mode='lines+markers',
+    name='Windstärke (m/s)',
+    yaxis='y2',
+    line=dict(color='orange'),
+))
+
+# Windrichtung als Linie auf zweiter y-Achse
+fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["wind_dir"],
+    mode='lines',
+    name='Windrichtung (°)',
+    yaxis='y3',
+    line=dict(color='green', dash='dot'),
+))
+
+# Achsen-Layout
+fig.update_layout(
+    title='Wetterdaten (Traunkirchen)',
+    xaxis=dict(title='Zeit'),
+    yaxis=dict(title='Wolkenbedeckung (Anteil)', range=[0, 4]),
+    yaxis2=dict(
+        title='Windgeschwindigkeit (m/s)',
+        overlaying='y',
+        side='right',
+        range=[0, df["wind_speed"].max() * 1.2]
+    ),
+    yaxis3=dict(
+        title='Windrichtung (°)',
+        anchor='free',
+        overlaying='y',
+        side='right',
+        position=1,
+        range=[0, 360],
+        showgrid=False,
+        zeroline=False
+    ),
+    legend=dict(x=0, y=1.1, orientation='h'),
+    margin=dict(t=50, b=40)
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
