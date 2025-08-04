@@ -63,14 +63,16 @@ def fetch_pressure_and_cloud(start, end, lat, lon):
 # -----------------------------
 # Fetch: AROME Winddaten
 # -----------------------------
-def fetch_wind_arome(lat, lon):
+def fetch_wind_arome(lat, lon, start, end):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
         "longitude": lon,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
         "hourly": "wind_speed_10m,wind_direction_10m",
-        "timezone": "Europe/Vienna",
-        "models": "arome"
+        "model": "dmi_harmonie_arome",   # AROME Modell bei Open-Meteo
+        "timezone": "Europe/Vienna"
     }
     r = requests.get(url, params=params)
     r.raise_for_status()
@@ -78,6 +80,7 @@ def fetch_wind_arome(lat, lon):
     df["time"] = pd.to_datetime(df["time"])
     df.set_index("time", inplace=True)
     return df
+
 
 # -----------------------------
 # Daten abrufen
@@ -87,7 +90,7 @@ df_data = {}
 for name, (lat, lon) in coords.items():
     df_data[name] = fetch_pressure_and_cloud(start_date, end_date, lat, lon)
 
-wind_df = fetch_wind_arome(*coords["Traunkirchen"])
+wind_df = fetch_wind_arome(*coords["Traunkirchen"], start_date, end_date)
 
 # Druckgradienten berechnen
 main_df = df_data["Traunkirchen"][["pressure_msl"]].rename(columns={"pressure_msl": "P_T"})
