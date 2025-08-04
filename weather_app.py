@@ -14,18 +14,40 @@ coords = {
 }
 
 def fetch_openmeteo(start, end, lat, lon):
-    url = "https://archive-api.open-meteo.com/v1/archive"
-    params = {
-        "latitude": lat, "longitude": lon,
-        "start_date": start.isoformat(), "end_date": end.isoformat(),
-        "hourly": ["pressure_msl","cloud_cover","cloud_cover_low","cloud_cover_mid","cloud_cover_high",
-                   "wind_speed_10m","wind_direction_10m"],
-        "timezone": "Europe/Vienna",
-        "past_days": (date.today()-start).days
-    }
+    today = date.today()
+    if end <= today:
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        params = {
+            "latitude": lat, "longitude": lon,
+            "start_date": start.isoformat(), "end_date": end.isoformat(),
+            "hourly": ",".join([
+                "pressure_msl", "cloud_cover", "cloud_cover_low",
+                "cloud_cover_mid", "cloud_cover_high",
+                "wind_speed_10m", "wind_direction_10m"
+            ]),
+            "timezone": "Europe/Vienna"
+        }
+    else:
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat, "longitude": lon,
+            "start_date": start.isoformat(), "end_date": end.isoformat(),
+            "hourly": ",".join([
+                "pressure_msl", "cloud_cover", "cloud_cover_low",
+                "cloud_cover_mid", "cloud_cover_high",
+                "wind_speed_10m", "wind_direction_10m"
+            ]),
+            "timezone": "Europe/Vienna"
+        }
+
     r = requests.get(url, params=params)
     r.raise_for_status()
-    return pd.DataFrame(r.json()["hourly"])
+    data = r.json()
+    df = pd.DataFrame(data["hourly"])
+    df["time"] = pd.to_datetime(df["time"])
+    df.set_index("time", inplace=True)
+    return df
+
 
 st.title("Druckgradienten, Bewölkung & Wind (AROME)")
 start_date = st.date_input("Startdatum", date.today() - timedelta(days=5))
