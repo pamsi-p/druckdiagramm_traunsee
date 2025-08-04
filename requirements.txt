@@ -2,3 +2,4 @@ streamlit
 meteostat
 matplotlib
 pandas
+plotly
