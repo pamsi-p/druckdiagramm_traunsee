@@ -20,16 +20,11 @@ coords = {
 }
 
 # -----------------------------
-# Modernes Datumsauswahl UI
+# Datumsauswahl UI
 # -----------------------------
-st.sidebar.header("Zeitraum wählen")
-def_date = date.today()
-start_date, end_date = st.sidebar.date_input(
-    "Start- und Enddatum",
-    value=[def_date - timedelta(days=3), def_date + timedelta(days=2)],
-    min_value=def_date - timedelta(days=365),
-    max_value=def_date + timedelta(days=7)
-)
+
+start_date = st.date_input("Startdatum", date.today() - timedelta(days=5))
+end_date = st.date_input("Enddatum", date.today() + timedelta(days=7))
 
 if start_date > end_date:
     st.error("Startdatum darf nicht nach Enddatum liegen.")
