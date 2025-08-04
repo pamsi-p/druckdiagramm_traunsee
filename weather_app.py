@@ -1,5 +1,5 @@
 import streamlit as st
-from meteostat import Point, Daily
+from meteostat import Point, Daily, Hourly
 from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
@@ -18,8 +18,8 @@ schwanenstadt = Point(48.051, 13.791, 380)     # ca. Schwanenstadt
 # Daten laden
 st.info("Lade Wetterdaten...")
 
-data_is = Daily(bad_ischl, start, end).fetch()
-data_sw = Daily(schwanenstadt, start, end).fetch()
+data_is = Hourly(bad_ischl, start, end).fetch()
+data_sw = Hourly(schwanenstadt, start, end).fetch()
 
 # Nur Luftdruck behalten
 data = pd.DataFrame()
