@@ -26,27 +26,28 @@ def build_url(lat, lon):
     )
 
 # Daten abrufen
-def get_weather_df(name, lat, lon):
+def get_weather_df(name, lat, lon, include_clouds=False):
     url = build_url(lat, lon)
     r = requests.get(url)
     data = r.json()
     df = pd.DataFrame(data["hourly"])
     df["time"] = pd.to_datetime(df["time"])
     df.set_index("time", inplace=True)
-    df = df.rename(columns={
-        "pressure_msl": f"pressure_{name}",
-        "cloudcover": "cloudcover",
-        "cloudcover_low": "low",
-        "cloudcover_mid": "mid",
-        "cloudcover_high": "high"
-    })
-    return df[[f"pressure_{name}", "cloudcover", "low", "mid", "high"]]
+
+    df = df.rename(columns={"pressure_msl": f"pressure_{name}"})
+
+    if include_clouds:
+        return df[[f"pressure_{name}", "cloudcover", "low", "mid", "high"]]
+    else:
+        return df[[f"pressure_{name}"]]
+
 
 with st.spinner("📡 Lade Wetterdaten..."):
-    df_tk = get_weather_df("Traunkirchen", **orte["Traunkirchen"])
+    df_tk = get_weather_df("Traunkirchen", **orte["Traunkirchen"], include_clouds=True)
     df_gm = get_weather_df("Gmunden", **orte["Gmunden"])
     df_bi = get_weather_df("BadIschl", **orte["Bad Ischl"])
     df_rd = get_weather_df("Ried", **orte["Ried im Innkreis"])
+
 
 # Zusammenführen & berechnen
 df = pd.concat([df_tk, df_gm, df_bi, df_rd], axis=1)
