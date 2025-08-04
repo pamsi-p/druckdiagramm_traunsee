@@ -37,7 +37,21 @@ def get_weather_df(name, lat, lon, include_clouds=False):
     df = df.rename(columns={"pressure_msl": f"pressure_{name}"})
 
     if include_clouds:
-        return df[[f"pressure_{name}", "cloudcover", "low", "mid", "high"]]
+        cols = [f"pressure_{name}"]
+optional_clouds = ["cloudcover", "cloudcover_low", "cloudcover_mid", "cloudcover_high"]
+
+for col in optional_clouds:
+    if col in df.columns:
+        cols.append(col)
+
+df = df.rename(columns={
+    "cloudcover": "cloudcover",
+    "cloudcover_low": "low",
+    "cloudcover_mid": "mid",
+    "cloudcover_high": "high"
+})
+
+return df[cols]
     else:
         return df[[f"pressure_{name}"]]
 
