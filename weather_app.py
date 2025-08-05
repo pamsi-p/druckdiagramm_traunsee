@@ -225,13 +225,13 @@ if df.index.min() <= now <= df.index.max():
     fig.add_annotation(
         x=now,
         y=1,
-        text="Jetzt",
+        text="Heute",
         showarrow=False,
         yanchor="top",
         xanchor="left",
         xref="x",
         yref="paper",
-        font=dict(color="yellow")
+        font=dict(color="orange")
     )
 
 fig.update_layout(
@@ -322,62 +322,3 @@ fig_wind.update_layout(
 )
 
 st.plotly_chart(fig_wind, use_container_width=True)
-
-# ======================
-# 4. AROME Prognose (Platzhalter)
-# ======================
-st.header("AROME Modellprognose (Demo)")
-
-hours_forecast = st.slider("AROME Prognosezeitraum (h)", 6, 48, 24)
-
-# Dummy-Daten
-arome_times = pd.date_range(start=end_date, periods=hours_forecast, freq="H", tz="Europe/Vienna")
-arome_temp = 15 + 3 * np.sin(np.linspace(0, 2 * np.pi, hours_forecast))
-arome_wind = 10 + 2 * np.cos(np.linspace(0, 2 * np.pi, hours_forecast))
-
-fig_arome = go.Figure()
-
-fig_arome.add_trace(go.Scatter(
-    x=arome_times,
-    y=arome_temp,
-    mode='lines+markers',
-    name='Temperatur (°C)',
-    line=dict(color='tomato')
-))
-
-fig_arome.add_trace(go.Scatter(
-    x=arome_times,
-    y=arome_wind,
-    mode='lines+markers',
-    name='Windgeschwindigkeit (m/s)',
-    line=dict(color='steelblue')
-))
-
-fig_arome.update_layout(
-    title='AROME Modellprognose (Demo)',
-    xaxis_title='Zeit',
-    yaxis_title='Wert',
-    legend=dict(orientation='h', y=1.1),
-    margin=dict(t=50, b=60)
-)
-
-st.plotly_chart(fig_arome, use_container_width=True)
-
-
-# ======================
-# 5. Windkarte über Traunsee
-# ======================
-st.header("Windkarte über den Traunsee (Open-Meteo Prognose)")
-
-forecast_hour = st.slider("Prognosezeitpunkt (Stunden ab jetzt)", min_value=0, max_value=48, value=0, step=1)
-
-with st.spinner("Lade Winddaten vom Open-Meteo API..."):
-    grid_coords = generate_traunsee_grid()
-    df_wind = fetch_forecast_grid(grid_coords, forecast_hour)
-
-if df_wind.empty:
-    st.warning("Keine Winddaten verfügbar.")
-else:
-    fig_map = plot_wind_map(df_wind)
-    st.plotly_chart(fig_map, use_container_width=True)
-
