@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 import plotly.graph_objects as go
 from datetime import date, timedelta
+from plotly.subplots import make_subplots
 
 # Koordinaten:
 coords = {
