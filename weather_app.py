@@ -4,17 +4,17 @@ import pandas as pd
 import numpy as np
 import requests
 import plotly.graph_objects as go
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 from plotly.subplots import make_subplots
 
 # ======================
 # Koordinaten
 # ======================
 coords = {
-    "Traunkirchen": (47.993,13.745),
-    "Gmunden": (47.918,13.799),
-    "Bad_Ischl": (47.714,13.632),
-    "Ried": (48.198,13.490)
+    "Traunkirchen": (47.993, 13.745),
+    "Gmunden": (47.918, 13.799),
+    "Bad_Ischl": (47.714, 13.632),
+    "Ried": (48.198, 13.490)
 }
 
 # ======================
@@ -41,7 +41,9 @@ def fetch_openmeteo(start, end, lat, lon):
     r.raise_for_status()
     data = r.json()
     df = pd.DataFrame(data["hourly"])
-    df["time"] = pd.to_datetime(df["time"])
+
+    # Zeitzone zuweisen (Fix für tz-naive vs. tz-aware Vergleich)
+    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
     df.set_index("time", inplace=True)
     return df
 
@@ -59,11 +61,11 @@ if end_date < start_date:
 
 # Daten laden
 dfs = {}
-for name,(lat,lon) in coords.items():
+for name, (lat, lon) in coords.items():
     dfs[name] = fetch_openmeteo(start_date, end_date, lat, lon)
 
 # Berechnungen
-df = dfs["Traunkirchen"].rename(columns={"pressure_msl":"P_T"})
+df = dfs["Traunkirchen"].rename(columns={"pressure_msl": "P_T"})
 df["P_G"] = dfs["Gmunden"]["pressure_msl"]
 df["delta_P_TG"] = df["P_T"] - df["P_G"]
 df["P_B"] = dfs["Bad_Ischl"]["pressure_msl"]
@@ -82,7 +84,6 @@ df["wind_speed_kt"] = df["wind_speed"] * 1.94384
 # ======================
 fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-# Primäre Y-Achse (ΔP)
 fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_TG"],
                          name="ΔP Traunkirchen–Gmunden",
                          line=dict(color="grey")),
@@ -93,7 +94,6 @@ fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_BR"],
                          line=dict(color="deepskyblue")),
               secondary_y=False)
 
-# Sekundäre Y-Achse (clouds total)
 fig.add_trace(go.Scatter(x=df.index, y=df["cloud_total"],
                          name="clouds total [Okta]",
                          line=dict(color="black")),
@@ -147,7 +147,7 @@ if df.index.min() <= now <= df.index.max():
     )
 
 fig.update_layout(
-    title="Druckdifferenz und Gesamtbewölkung", 
+    title="Druckdifferenz und Gesamtbewölkung",
     xaxis_title="Datum",
     yaxis_title="ΔP [hPa]",
     legend=dict(orientation="h", y=-0.25),
@@ -243,7 +243,7 @@ st.header("AROME Modellprognose (Demo)")
 hours_forecast = st.slider("AROME Prognosezeitraum (h)", 6, 48, 24)
 
 # Dummy-Daten
-arome_times = pd.date_range(start=end_date, periods=hours_forecast, freq="H")
+arome_times = pd.date_range(start=end_date, periods=hours_forecast, freq="H", tz="Europe/Vienna")
 arome_temp = 15 + 3 * np.sin(np.linspace(0, 2 * np.pi, hours_forecast))
 arome_wind = 10 + 2 * np.cos(np.linspace(0, 2 * np.pi, hours_forecast))
 
