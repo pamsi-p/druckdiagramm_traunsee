@@ -71,39 +71,66 @@ else:
     df["cloud_high"] = dfs["Traunkirchen"]["cloud_cover_high"]
     df["wind_speed"] = dfs["Traunkirchen"]["wind_speed_10m"]
     df["wind_dir"] = dfs["Traunkirchen"]["wind_direction_10m"]
-    # Plotly
-# Subplot mit sekundärer y-Achse erstellen
+
+
+# =========================
+# 1. ΔP & Clouds Plot
+# =========================
 fig = make_subplots(specs=[[{"secondary_y": True}]])
-# Primäre Achse
+
+# Primäre Y-Achse (ΔP)
 fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_TG"],
-                         name="ΔP Traunkirchen–Gmunden", line=dict(color="grey")),
+                         name="ΔP Traunkirchen–Gmunden",
+                         line=dict(color="grey")),
               secondary_y=False)
+
 fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_BR"],
-                         name="ΔP Bad Ischl–Ried", line=dict(color="deepskyblue")),
+                         name="ΔP Bad Ischl–Ried",
+                         line=dict(color="deepskyblue")),
               secondary_y=False)
-# Sekundäre Achse (schwarze Linie)
+
+# Sekundäre Y-Achse (clouds total)
 fig.add_trace(go.Scatter(x=df.index, y=df["cloud_total"],
-                         name="clouds total [Okta]", line=dict(color="black")),
+                         name="clouds total [Okta]",
+                         line=dict(color="black")),
               secondary_y=True)
-# Horizontale Linie
-fig.add_hline(y=1.5, line=dict(color="red", dash="dash"),
-              annotation_text="Oberwind – Süd", annotation_position="top right")
-# Achsentitel
+
+# Horizontale Linie (als Shape)
+fig.add_shape(
+    type="line",
+    x0=df.index.min(),
+    x1=df.index.max(),
+    y0=1.5,
+    y1=1.5,
+    line=dict(color="red", dash="dash"),
+    yref="y",  # primäre y-Achse
+    xref="x"
+)
+
+fig.add_annotation(
+    x=df.index.max(),
+    y=1.5,
+    text="Oberwind – Süd",
+    showarrow=False,
+    yanchor="bottom",
+    xanchor="right"
+)
+
 fig.update_layout(
+    title="ΔP und Gesamtbewölkung",
     xaxis_title="Datum",
     yaxis_title="ΔP [hPa]",
-    legend=dict(orientation="h", y=-0.2)
+    legend=dict(orientation="h", y=-0.25),
+    margin=dict(t=50, b=60)
 )
-# Sekundäre y-Achse beschriften
+
 fig.update_yaxes(title_text="clouds [Okta]", secondary_y=True)
-# Diagramm anzeigen
+
 st.plotly_chart(fig, use_container_width=True)
 
-
-# Beispiel-Daten, ersetze mit deinem df
-# df = dfs["Traunkirchen"] usw.
-
-# Wolkendiagramm
+# =========================
+# 2. Cloud Stack Plot
+# =========================
 fig_clouds = go.Figure()
 
 fig_clouds.add_trace(go.Scatter(
@@ -114,6 +141,7 @@ fig_clouds.add_trace(go.Scatter(
     stackgroup='cloud',
     line=dict(width=0.5, color='lightblue'),
 ))
+
 fig_clouds.add_trace(go.Scatter(
     x=df.index,
     y=df["cloud_mid"],
@@ -122,6 +150,7 @@ fig_clouds.add_trace(go.Scatter(
     stackgroup='cloud',
     line=dict(width=0.5, color='deepskyblue'),
 ))
+
 fig_clouds.add_trace(go.Scatter(
     x=df.index,
     y=df["cloud_high"],
@@ -136,13 +165,15 @@ fig_clouds.update_layout(
     xaxis_title='Zeit',
     yaxis_title='Wolkenbedeckung (Anteil)',
     yaxis=dict(range=[0, 4]),
-    legend=dict(orientation='h', y=1.1)
+    legend=dict(orientation='h', y=1.1),
+    margin=dict(t=50, b=60)
 )
 
 st.plotly_chart(fig_clouds, use_container_width=True)
 
-
-# Winddiagramm
+# =========================
+# 3. Winddiagramm
+# =========================
 fig_wind = go.Figure()
 
 fig_wind.add_trace(go.Scatter(
@@ -179,8 +210,7 @@ fig_wind.update_layout(
         zeroline=False
     ),
     legend=dict(orientation='h', y=1.1),
-    margin=dict(t=50, b=40)
+    margin=dict(t=50, b=60)
 )
 
 st.plotly_chart(fig_wind, use_container_width=True)
-
