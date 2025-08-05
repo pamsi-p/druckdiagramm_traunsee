@@ -217,7 +217,7 @@ if df.index.min() <= now <= df.index.max():
         x1=now,
         y0=0,
         y1=1,
-        line=dict(color="oragnge", width=4, dash="dot"),
+        line=dict(color="orange", width=4, dash="dot"),
         xref="x",
         yref="paper"
     )
