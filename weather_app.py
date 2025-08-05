@@ -65,22 +65,39 @@ else:
     df["P_B"] = dfs["Bad_Ischl"]["pressure_msl"]
     df["P_R"] = dfs["Ried"]["pressure_msl"]
     df["delta_P_BR"] = df["P_B"] - df["P_R"]
-    df["cloud_total"] = dfs["Traunkirchen"]["cloud_cover"] / 100 * 4
+    df["cloud_total"] = dfs["Traunkirchen"]["cloud_cover"]
     df["cloud_low"] = dfs["Traunkirchen"]["cloud_cover_low"]
     df["cloud_mid"] = dfs["Traunkirchen"]["cloud_cover_mid"]
     df["cloud_high"] = dfs["Traunkirchen"]["cloud_cover_high"]
     df["wind_speed"] = dfs["Traunkirchen"]["wind_speed_10m"]
     df["wind_dir"] = dfs["Traunkirchen"]["wind_direction_10m"]
     # Plotly
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_TG"], name="ΔP Traunkirchen–Gmunden", line=dict(color="grey")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_BR"], name="ΔP Bad Ischl–Ried", line=dict(color="deepskyblue")))
-    fig.add_trace(go.Scatter(x=df.index, y=df["cloud_total"], name="clouds total [Okta/2]", line=dict(color="black")))
-    fig.add_hline(y=1.5, line=dict(color="red", dash="dash"), annotation_text="Oberwind – Süd", annotation_position="top right")
-    fig.update_layout(yaxis_title="δP [hPa]; clouds [Okta/2]",
-                      xaxis_title="Datum & Stunde",
-                      legend=dict(orientation="h", y=-0.2))
-    st.plotly_chart(fig, use_container_width=True)
+# Subplot mit sekundärer y-Achse erstellen
+fig = make_subplots(specs=[[{"secondary_y": True}]])
+# Primäre Achse
+fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_TG"],
+                         name="ΔP Traunkirchen–Gmunden", line=dict(color="grey")),
+              secondary_y=False)
+fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_BR"],
+                         name="ΔP Bad Ischl–Ried", line=dict(color="deepskyblue")),
+              secondary_y=False)
+# Sekundäre Achse (schwarze Linie)
+fig.add_trace(go.Scatter(x=df.index, y=df["cloud_total"],
+                         name="clouds total [Okta]", line=dict(color="black")),
+              secondary_y=True)
+# Horizontale Linie
+fig.add_hline(y=1.5, line=dict(color="red", dash="dash"),
+              annotation_text="Oberwind – Süd", annotation_position="top right")
+# Achsentitel
+fig.update_layout(
+    xaxis_title="Datum",
+    yaxis_title="ΔP [hPa]",
+    legend=dict(orientation="h", y=-0.2)
+)
+# Sekundäre y-Achse beschriften
+fig.update_yaxes(title_text="clouds [Okta]", secondary_y=True)
+# Diagramm anzeigen
+st.plotly_chart(fig, use_container_width=True)
 
 
 # Beispiel-Daten, ersetze mit deinem df
