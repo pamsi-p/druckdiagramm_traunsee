@@ -47,6 +47,94 @@ def fetch_openmeteo(start, end, lat, lon):
     df.set_index("time", inplace=True)
     return df
 
+
+# ======================
+# Hilfsfunktionen für Windkarte
+# ======================
+def generate_traunsee_grid(lat_start=47.88, lat_end=47.93, lon_start=13.74, lon_end=13.81, step=0.01):
+    lats = np.arange(lat_start, lat_end, step)
+    lons = np.arange(lon_start, lon_end, step)
+    grid = [(round(lat, 4), round(lon, 4)) for lat in lats for lon in lons]
+    return grid
+
+def wind_vector(speed, direction_deg):
+    """Richtung ist meteorologisch (woher), daher -sin, -cos"""
+    rad = np.radians(direction_deg)
+    u = -speed * np.sin(rad)
+    v = -speed * np.cos(rad)
+    return u, v
+
+def fetch_forecast_grid(grid_coords, forecast_hour=0):
+    """Holt Winddaten von Open-Meteo für alle Punkte im Gitter"""
+    all_data = []
+    for lat, lon in grid_coords:
+        try:
+            url = "https://api.open-meteo.com/v1/forecast"
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "hourly": "wind_speed_10m,wind_direction_10m",
+                "forecast_days": 2,
+                "timezone": "Europe/Vienna"
+            }
+            r = requests.get(url, params=params)
+            r.raise_for_status()
+            data = r.json()
+            df = pd.DataFrame(data["hourly"])
+            df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
+
+            selected_time = df["time"].min() + pd.Timedelta(hours=forecast_hour)
+            df = df[df["time"] == selected_time]
+
+            if not df.empty:
+                u, v = wind_vector(df["wind_speed_10m"].iloc[0], df["wind_direction_10m"].iloc[0])
+                all_data.append({
+                    "lat": lat,
+                    "lon": lon,
+                    "u": u,
+                    "v": v,
+                    "speed": df["wind_speed_10m"].iloc[0],
+                    "direction": df["wind_direction_10m"].iloc[0],
+                    "time": selected_time
+                })
+
+        except Exception as e:
+            print(f"Fehler bei Koordinate {lat},{lon}: {e}")
+
+    return pd.DataFrame(all_data)
+
+def plot_wind_map(df_wind):
+    fig = go.Figure()
+
+    for _, row in df_wind.iterrows():
+        fig.add_trace(go.Scattergeo(
+            lon=[row["lon"], row["lon"] + row["u"] * 0.02],
+            lat=[row["lat"], row["lat"] + row["v"] * 0.02],
+            mode="lines+markers",
+            line=dict(width=2, color="orange"),
+            marker=dict(size=4),
+            name=f"{row['speed']:.1f} m/s"
+        ))
+
+    fig.update_layout(
+        title=f"Windfeld über dem Traunsee ({df_wind['time'].iloc[0].strftime('%Y-%m-%d %H:%M')})",
+        geo=dict(
+            projection_type="mercator",
+            center=dict(lat=47.9, lon=13.775),
+            lonaxis_range=[13.73, 13.82],
+            lataxis_range=[47.87, 47.94],
+            showland=True,
+            landcolor="lightgray",
+            showcountries=False,
+            showlakes=True,
+            lakecolor="lightblue"
+        ),
+        margin=dict(t=30, b=30)
+    )
+
+    return fig
+
+
 # ======================
 # UI & Daten vorbereiten
 # ======================
@@ -129,7 +217,7 @@ if df.index.min() <= now <= df.index.max():
         x1=now,
         y0=0,
         y1=1,
-        line=dict(color="yellow", width=2, dash="dot"),
+        line=dict(color="oragnge", width=4, dash="dot"),
         xref="x",
         yref="paper"
     )
@@ -274,3 +362,22 @@ fig_arome.update_layout(
 )
 
 st.plotly_chart(fig_arome, use_container_width=True)
+
+
+# ======================
+# 5. Windkarte über Traunsee
+# ======================
+st.header("Windkarte über den Traunsee (Open-Meteo Prognose)")
+
+forecast_hour = st.slider("Prognosezeitpunkt (Stunden ab jetzt)", min_value=0, max_value=48, value=0, step=1)
+
+with st.spinner("Lade Winddaten vom Open-Meteo API..."):
+    grid_coords = generate_traunsee_grid()
+    df_wind = fetch_forecast_grid(grid_coords, forecast_hour)
+
+if df_wind.empty:
+    st.warning("Keine Winddaten verfügbar.")
+else:
+    fig_map = plot_wind_map(df_wind)
+    st.plotly_chart(fig_map, use_container_width=True)
+
