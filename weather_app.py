@@ -125,7 +125,7 @@ st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwett
 # --- AROME Slider Bilderliste ---
 arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png" for i in range(1, 43)]
 
-st.markdown("## AROME (von kitewetter.at")
+st.markdown("## AROME (von kitewetter.at)")
 
 # ======================
 # Horizontales Scrollen per HTML/CSS
