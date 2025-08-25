@@ -190,7 +190,7 @@ with col3:
             st.session_state.arome_index = 0
 
 with col2:
-    st.image(arome_images[st.session_state.arome_index], use_column_width=True)
+    st.image(arome_images[st.session_state.arome_index], use_container_width=True)
     st.caption(f"Bild {st.session_state.arome_index + 1} von {len(arome_images)}")
 
 
