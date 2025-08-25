@@ -7,40 +7,23 @@ from plotly.subplots import make_subplots
 from datetime import date, timedelta
 
 # ======================
-# Styles / Farben
+# Hintergrund & Styling
 # ======================
 st.markdown(
     """
     <style>
-    /* Seitenhintergrund */
     body {
-        background-color: #E6F0FA;  /* Sanftes Himmelblau */
+        background-color: #FFF8E7;  /* Heller, warmer Hintergrund */
     }
-    /* Hauptbereich */
-    .css-18e3th9 {
+    .css-18e3th9 {  /* Hauptbereich */
         background-color: rgba(255, 255, 255, 0.85);
-        padding: 2rem;
-        border-radius: 12px;
-    }
-    /* Buttons */
-    .stButton>button {
-        background-color: #4DA6FF;
-        color: white;
-        border-radius: 8px;
-    }
-    /* Überschriften & Text */
-    h1, h2, h3, h4, h5, h6, p, span {
-        color: #333333;
-    }
-    /* Sekundärer Text */
-    .info-text {
-        color: #555555;
+        padding: 20px;
+        border-radius: 15px;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
-
 
 # ======================
 # Orte & Koordinaten
@@ -58,8 +41,10 @@ coords = {
 def fetch_openmeteo(start, end, lat, lon):
     url = "https://archive-api.open-meteo.com/v1/archive" if end <= date.today() else "https://api.open-meteo.com/v1/forecast"
     params = {
-        "latitude": lat, "longitude": lon,
-        "start_date": start.isoformat(), "end_date": end.isoformat(),
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
         "hourly": "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,wind_speed_10m,wind_direction_10m",
         "timezone": "Europe/Vienna"
     }
@@ -73,7 +58,7 @@ def fetch_openmeteo(start, end, lat, lon):
 # ======================
 # UI & Datenvorbereitung
 # ======================
-st.title("🌤 Traunsee Druckgradient")
+st.title("Traunsee Druckgradient")
 
 # Standard-Zeitraum: Heute + 2 Tage
 default_start = date.today()
@@ -104,24 +89,47 @@ df["wind_dir"] = dfs["Traunkirchen"]["wind_direction_10m"]
 # ======================
 fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_TG"], name="ΔP Traunkirchen–Gmunden", line=dict(color="grey")), secondary_y=False)
-fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_BR"], name="ΔP Bad Ischl–Ried", line=dict(color="deepskyblue")), secondary_y=False)
-fig.add_trace(go.Scatter(x=df.index, y=df["cloud_cover"], name="clouds total [Okta]", visible="legendonly", line=dict(color="black")), secondary_y=True)
+fig.add_trace(go.Scatter(
+    x=df.index, y=df["delta_P_TG"],
+    name="ΔP Traunkirchen–Gmunden",
+    line=dict(color="grey", width=2)
+), secondary_y=False)
+
+fig.add_trace(go.Scatter(
+    x=df.index, y=df["delta_P_BR"],
+    name="ΔP Bad Ischl–Ried",
+    line=dict(color="deepskyblue", width=2)
+), secondary_y=False)
+
+fig.add_trace(go.Scatter(
+    x=df.index, y=df["cloud_cover"],
+    name="Bewölkung [Okta]",
+    visible="legendonly",
+    line=dict(color="black", dash="dot")
+), secondary_y=True)
 
 # --- Markierung heutiger Tag ---
 today = pd.Timestamp.now(tz="Europe/Vienna").normalize()
 tomorrow = today + pd.Timedelta(days=1)
 fig.add_vrect(
     x0=today, x1=tomorrow,
-    fillcolor="#FFE57F", opacity=0.2,  /* Helles Gelb für Sonne */
+    fillcolor="#FFE57F", opacity=0.2,  # Helles Gelb für Sonne
     layer="below", line_width=0
 )
 
 # --- Linie für "Jetzt" ---
 now = pd.Timestamp.now(tz="Europe/Vienna")
 if df.index.min() <= now <= df.index.max():
-    fig.add_shape(type="line", x0=now, x1=now, y0=0, y1=1, line=dict(color="orange", width=3, dash="dot"), xref="x", yref="paper")
-    fig.add_annotation(x=now, y=1, text="Jetzt", showarrow=False, xanchor="left", xref="x", yref="paper", font=dict(color="orange"))
+    fig.add_shape(
+        type="line", x0=now, x1=now, y0=0, y1=1,
+        line=dict(color="orange", width=3, dash="dot"),
+        xref="x", yref="paper"
+    )
+    fig.add_annotation(
+        x=now, y=1, text="Jetzt", showarrow=False,
+        xanchor="left", xref="x", yref="paper",
+        font=dict(color="orange")
+    )
 
 # --- Horizontale Linie bei 1.5 hPa ---
 fig.add_hline(
@@ -138,9 +146,11 @@ fig.update_layout(
     yaxis_title="ΔP [hPa]",
     legend=dict(orientation="h", y=-0.25),
     margin=dict(t=50, b=60),
-    dragmode="zoom"
+    dragmode="zoom",
+    plot_bgcolor='rgba(0,0,0,0)',
+    paper_bgcolor='rgba(0,0,0,0)',
 )
-fig.update_yaxes(title_text="clouds [Okta]", secondary_y=True, fixedrange=True)
+fig.update_yaxes(title_text="Bewölkung [Okta]", secondary_y=True, fixedrange=True)
 
 st.plotly_chart(fig, use_container_width=True)
 
@@ -153,15 +163,18 @@ st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwett
 # ======================
 # 3. AROME Slider (Karussell)
 # ======================
+# --- AROME Slider Bilderliste ---
 arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png" for i in range(1, 43)]
 st.markdown("## AROME (von kitewetter.at)")
 
+# HTML für horizontal scrollbaren Bereich
 scrollable_html = "<div style='display:flex; overflow-x:auto; gap:10px; padding:10px;'>"
 for img_url in arome_images:
     scrollable_html += f"<img src='{img_url}' style='height:300px;'>"
 scrollable_html += "</div>"
 
 st.markdown(scrollable_html, unsafe_allow_html=True)
+
 
 # # ======================
 # # 2. Wolken-Schichtplot
