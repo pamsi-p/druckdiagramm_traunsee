@@ -113,6 +113,7 @@ st.plotly_chart(fig, use_container_width=True)
 # ======================
 # 2. Profiwetter Bild
 # ======================
+st.header("Profiwetter MOS - Traunkirchen")
 
 st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
 
