@@ -70,7 +70,7 @@ fig = make_subplots(specs=[[{"secondary_y": True}]])
 
 fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_TG"], name="ΔP Traunkirchen–Gmunden", line=dict(color="grey")), secondary_y=False)
 fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_BR"], name="ΔP Bad Ischl–Ried", line=dict(color="deepskyblue")), secondary_y=False)
-fig.add_trace(go.Scatter(x=df.index, y=df["cloud_cover"], name="clouds total [Okta]", line=dict(color="black")), secondary_y=True)
+fig.add_trace(go.Scatter(x=df.index, y=df["cloud_cover"], name="clouds total [Okta]", visible="legendonly", line=dict(color="black")), secondary_y=True)
 
 # --- Markierung heutiger Tag ---
 today = pd.Timestamp.now(tz="Europe/Vienna").normalize()
