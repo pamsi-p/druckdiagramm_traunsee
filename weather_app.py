@@ -172,27 +172,24 @@ arome_images = [
 # --- Streamlit Karussell ---
 st.markdown("## AROME Prognose (von kitewetter.at)")
 
-if "arome_index" not in st.session_state:
-    st.session_state.arome_index = 0
+selected_index = st.slider(
+    "Wähle ein Bild",
+    min_value=0,
+    max_value=len(arome_images)-1,
+    value=0,
+    step=1
+)
+st.image(arome_images[selected_index], use_container_width=True)
+st.caption(f"Bild {selected_index + 1} von {len(arome_images)}")
 
-col1, col2, col3 = st.columns([1, 6, 1])
-
-with col1:
-    if st.button("⬅️ Vorheriges"):
-        st.session_state.arome_index -= 1
-        if st.session_state.arome_index < 0:
-            st.session_state.arome_index = len(arome_images) - 1
-
-with col3:
-    if st.button("Nächstes ➡️"):
-        st.session_state.arome_index += 1
-        if st.session_state.arome_index >= len(arome_images):
-            st.session_state.arome_index = 0
-
-with col2:
-    st.image(arome_images[st.session_state.arome_index], use_container_width=True)
-    st.caption(f"Bild {st.session_state.arome_index + 1} von {len(arome_images)}")
-
+# --- Miniaturbild-Galerie zum Scrollen ---
+st.markdown("### Miniaturansicht (klickbar)")
+cols = st.columns(6)
+for i, img_url in enumerate(arome_images):
+    with cols[i % 6]:
+        if st.button(f"", key=f"thumb_{i}"):
+            selected_index = i
+        st.image(img_url, width=80)
 
 # # ======================
 # # 2. Wolken-Schichtplot
