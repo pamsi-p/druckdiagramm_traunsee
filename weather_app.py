@@ -119,47 +119,93 @@ st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwett
 
 
 # ======================
-# 2. Wolken-Schichtplot
+# 4. Externen Wetterbereich einbinden
 # ======================
-fig_clouds = go.Figure()
-for col, name, color in [
-    ("cloud_cover_low", "Wolken unten", "lightblue"),
-    ("cloud_cover_mid", "Wolken Mitte", "deepskyblue"),
-    ("cloud_cover_high", "Wolken oben", "dodgerblue")
-]:
-    fig_clouds.add_trace(go.Scatter(x=df.index, y=df[col], mode='lines', name=name, stackgroup='cloud', line=dict(width=0.5, color=color)))
+import requests
+from bs4 import BeautifulSoup
+import streamlit.components.v1 as components
 
-fig_clouds.update_layout(
-    title='Wolkenbedeckung (Traunkirchen)',
-    xaxis_title='Zeit',
-    yaxis_title='Wolkenbedeckung (Anteil)',
-    yaxis=dict(range=[0, 4], fixedrange=True),
-    legend=dict(orientation='h', y=1.1),
-    margin=dict(t=50, b=60),
-    dragmode="zoom"
-)
-st.plotly_chart(fig_clouds, use_container_width=True)
+st.header("AROME Wetterdaten (von kitewetter.at)")
 
-# ======================
-# 3. Winddiagramm
-# ======================
-fig_wind = go.Figure()
+# URL der Seite
+url = "https://www.kitewetter.at/?page_id=1569"
+res = requests.get(url)
+res.raise_for_status()  # sicherstellen, dass Abruf erfolgreich war
 
-fig_wind.add_trace(go.Scatter(
-    x=df.index, y=df["wind_speed_kt"], mode='lines+markers',
-    name='Windstärke (kt)', line=dict(color='orange'), yaxis='y1'))
+soup = BeautifulSoup(res.content, "html.parser")
 
-fig_wind.add_trace(go.Scatter(
-    x=df.index, y=df["wind_dir"], mode='lines',
-    name='Windrichtung (°)', line=dict(color='green', dash='dot'), yaxis='y2'))
+# Überschriften als Ankerpunkte
+start_header = soup.find(lambda tag: tag.name in ["h2","h3"] and "AROME latest run" in tag.text)
+end_header = soup.find(lambda tag: tag.name in ["h2","h3"] and "ICON 2D" in tag.text)
 
-fig_wind.update_layout(
-    title='Windstärke & Windrichtung (Traunkirchen)',
-    xaxis_title='Zeit',
-    yaxis=dict(title='Windstärke (kt)', range=[0, df["wind_speed_kt"].max() * 1.2], fixedrange=True),
-    yaxis2=dict(title='Windrichtung (°)', overlaying='y', side='right', range=[0, 360], showgrid=False, fixedrange=True),
-    legend=dict(orientation='h', y=1.1),
-    margin=dict(t=50, b=60),
-    dragmode="zoom"
-)
-st.plotly_chart(fig_wind, use_container_width=True)
+if start_header and end_header:
+    # Alle Inhalte zwischen Start- und End-Header sammeln
+    contents = []
+    for tag in start_header.find_all_next():
+        if tag == end_header:
+            break
+        contents.append(str(tag))
+
+    html_content = "".join(contents)
+
+    # In Streamlit anzeigen
+    components.html(html_content, height=600, scrolling=True)
+else:
+    st.warning("Konnte den gewünschten Bereich auf der Website nicht finden.")
+
+
+
+
+
+
+
+
+
+
+
+
+# # ======================
+# # 2. Wolken-Schichtplot
+# # ======================
+# fig_clouds = go.Figure()
+# for col, name, color in [
+#     ("cloud_cover_low", "Wolken unten", "lightblue"),
+#     ("cloud_cover_mid", "Wolken Mitte", "deepskyblue"),
+#     ("cloud_cover_high", "Wolken oben", "dodgerblue")
+# ]:
+#     fig_clouds.add_trace(go.Scatter(x=df.index, y=df[col], mode='lines', name=name, stackgroup='cloud', line=dict(width=0.5, color=color)))
+
+# fig_clouds.update_layout(
+#     title='Wolkenbedeckung (Traunkirchen)',
+#     xaxis_title='Zeit',
+#     yaxis_title='Wolkenbedeckung (Anteil)',
+#     yaxis=dict(range=[0, 4], fixedrange=True),
+#     legend=dict(orientation='h', y=1.1),
+#     margin=dict(t=50, b=60),
+#     dragmode="zoom"
+# )
+# st.plotly_chart(fig_clouds, use_container_width=True)
+
+# # ======================
+# # 3. Winddiagramm
+# # ======================
+# fig_wind = go.Figure()
+
+# fig_wind.add_trace(go.Scatter(
+#     x=df.index, y=df["wind_speed_kt"], mode='lines+markers',
+#     name='Windstärke (kt)', line=dict(color='orange'), yaxis='y1'))
+
+# fig_wind.add_trace(go.Scatter(
+#     x=df.index, y=df["wind_dir"], mode='lines',
+#     name='Windrichtung (°)', line=dict(color='green', dash='dot'), yaxis='y2'))
+
+# fig_wind.update_layout(
+#     title='Windstärke & Windrichtung (Traunkirchen)',
+#     xaxis_title='Zeit',
+#     yaxis=dict(title='Windstärke (kt)', range=[0, df["wind_speed_kt"].max() * 1.2], fixedrange=True),
+#     yaxis2=dict(title='Windrichtung (°)', overlaying='y', side='right', range=[0, 360], showgrid=False, fixedrange=True),
+#     legend=dict(orientation='h', y=1.1),
+#     margin=dict(t=50, b=60),
+#     dragmode="zoom"
+# )
+# st.plotly_chart(fig_wind, use_container_width=True)
