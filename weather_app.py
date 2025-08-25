@@ -7,6 +7,42 @@ from plotly.subplots import make_subplots
 from datetime import date, timedelta
 
 # ======================
+# Styles / Farben
+# ======================
+st.markdown(
+    """
+    <style>
+    /* Seitenhintergrund */
+    body {
+        background-color: #E6F0FA;  /* Sanftes Himmelblau */
+    }
+    /* Hauptbereich */
+    .css-18e3th9 {
+        background-color: rgba(255, 255, 255, 0.85);
+        padding: 2rem;
+        border-radius: 12px;
+    }
+    /* Buttons */
+    .stButton>button {
+        background-color: #4DA6FF;
+        color: white;
+        border-radius: 8px;
+    }
+    /* Überschriften & Text */
+    h1, h2, h3, h4, h5, h6, p, span {
+        color: #333333;
+    }
+    /* Sekundärer Text */
+    .info-text {
+        color: #555555;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ======================
 # Orte & Koordinaten
 # ======================
 coords = {
@@ -37,7 +73,7 @@ def fetch_openmeteo(start, end, lat, lon):
 # ======================
 # UI & Datenvorbereitung
 # ======================
-st.title("Traunsee Druckgradient")
+st.title("🌤 Traunsee Druckgradient")
 
 # Standard-Zeitraum: Heute + 2 Tage
 default_start = date.today()
@@ -77,7 +113,7 @@ today = pd.Timestamp.now(tz="Europe/Vienna").normalize()
 tomorrow = today + pd.Timedelta(days=1)
 fig.add_vrect(
     x0=today, x1=tomorrow,
-    fillcolor="yellow", opacity=0.2,
+    fillcolor="#FFE57F", opacity=0.2,  /* Helles Gelb für Sonne */
     layer="below", line_width=0
 )
 
@@ -87,7 +123,6 @@ if df.index.min() <= now <= df.index.max():
     fig.add_shape(type="line", x0=now, x1=now, y0=0, y1=1, line=dict(color="orange", width=3, dash="dot"), xref="x", yref="paper")
     fig.add_annotation(x=now, y=1, text="Jetzt", showarrow=False, xanchor="left", xref="x", yref="paper", font=dict(color="orange"))
 
-
 # --- Horizontale Linie bei 1.5 hPa ---
 fig.add_hline(
     y=1.5,
@@ -95,7 +130,6 @@ fig.add_hline(
     annotation_text="Oberwind Süd",
     annotation_position="top right"
 )
-
 
 # --- Layout ---
 fig.update_layout(
@@ -113,31 +147,20 @@ st.plotly_chart(fig, use_container_width=True)
 # ======================
 # 2. Profiwetter Bild
 # ======================
-st.header("Profiwetter MOS - Traunkirchen")
-
+st.header("profiwetter.ch - Traunkirchen")
 st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
-
 
 # ======================
 # 3. AROME Slider (Karussell)
 # ======================
-
-# --- AROME Slider Bilderliste ---
 arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png" for i in range(1, 43)]
-
 st.markdown("## AROME (von kitewetter.at)")
 
-# ======================
-# Horizontales Scrollen per HTML/CSS
-# ======================
-
-# HTML für horizontal scrollbaren Bereich
 scrollable_html = "<div style='display:flex; overflow-x:auto; gap:10px; padding:10px;'>"
 for img_url in arome_images:
     scrollable_html += f"<img src='{img_url}' style='height:300px;'>"
 scrollable_html += "</div>"
 
-# Streamlit-Display
 st.markdown(scrollable_html, unsafe_allow_html=True)
 
 # # ======================
