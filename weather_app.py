@@ -6,6 +6,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import date, timedelta
 
+# 🔧 Fix für inotify-Watcher-Fehler in manchen Umgebungen
+# Verhindert "inotify instance limit reached" durch Wechsel auf Polling
+st.set_option("server.fileWatcherType", "poll")
+
 # ======================
 # Orte & Koordinaten
 # ======================
@@ -27,12 +31,28 @@ def fetch_openmeteo(start, end, lat, lon):
         "hourly": "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,wind_speed_10m,wind_direction_10m",
         "timezone": "Europe/Vienna"
     }
-    r = requests.get(url, params=params)
-    r.raise_for_status()
-    df = pd.DataFrame(r.json()["hourly"])
-    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
-    df.set_index("time", inplace=True)
-    return df
+
+    # 🔧 Netzwerkaussetzer abfangen: Timeouts + einfache Retries
+    last_err = None
+    for _ in range(3):  # bis zu 3 Versuche
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            r.raise_for_status()
+            data = r.json()["hourly"]
+            df = pd.DataFrame(data)
+            df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna", nonexistent="shift_forward", ambiguous="NaT")
+            df.set_index("time", inplace=True)
+            # ggf. ambige Zeiten (Sommer-/Winterzeit) entfernen
+            df = df[~df.index.isna()]
+            return df
+        except requests.exceptions.Timeout as e:
+            last_err = e
+            continue
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            continue
+    # nach 3 Fehlversuchen sauber aborten
+    raise RuntimeError(f"Open-Meteo Abruf fehlgeschlagen: {last_err}")
 
 # ======================
 # UI & Datenvorbereitung
@@ -87,14 +107,6 @@ if df.index.min() <= now <= df.index.max():
     fig.add_shape(type="line", x0=now, x1=now, y0=0, y1=1, line=dict(color="orange", width=3, dash="dot"), xref="x", yref="paper")
     fig.add_annotation(x=now, y=1, text="Jetzt", showarrow=False, xanchor="left", xref="x", yref="paper", font=dict(color="orange"))
 
-# --- Horizontale Linie bei 1.5 hPa ---
-fig.add_hline(
-    y=1.5,
-    line=dict(color="red", dash="dash"),
-    annotation_text="Oberwind Süd",
-    annotation_position="top right"
-)
-
 # --- Layout ---
 fig.update_layout(
     title="Druckdifferenz und Gesamtbewölkung",
@@ -109,7 +121,7 @@ fig.update_yaxes(title_text="clouds [Okta]", secondary_y=True, fixedrange=True)
 st.plotly_chart(fig, use_container_width=True)
 
 # ======================
-# 3. Wolken-Schichtplot
+# 2. Wolken-Schichtplot
 # ======================
 fig_clouds = go.Figure()
 for col, name, color in [
@@ -131,7 +143,7 @@ fig_clouds.update_layout(
 st.plotly_chart(fig_clouds, use_container_width=True)
 
 # ======================
-# 4. Winddiagramm
+# 3. Winddiagramm
 # ======================
 fig_wind = go.Figure()
 
@@ -153,12 +165,3 @@ fig_wind.update_layout(
     dragmode="zoom"
 )
 st.plotly_chart(fig_wind, use_container_width=True)
-
-
-# ======================
-# 2. Profiwetter Bild
-# ======================
-
-st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
-
-
