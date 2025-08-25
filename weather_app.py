@@ -121,75 +121,34 @@ st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwett
 # ======================
 # 3. AROME Slider (Karussell)
 # ======================
-import streamlit as st
 
 # --- AROME Slider Bilderliste ---
-arome_images = [
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_01.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_02.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_03.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_04.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_05.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_06.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_07.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_08.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_09.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_10.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_11.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_12.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_13.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_14.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_15.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_16.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_17.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_18.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_19.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_20.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_21.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_22.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_23.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_24.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_25.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_26.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_27.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_28.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_29.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_30.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_31.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_32.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_33.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_34.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_35.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_36.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_37.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_38.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_39.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_40.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_41.png",
-    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_42.png"
-]
+arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png" for i in range(1, 43)]
 
-# --- Streamlit Karussell ---
-st.markdown("## AROME Prognose (von kitewetter.at)")
+# --- Session State für aktuellen Index ---
+if "index" not in st.session_state:
+    st.session_state.index = 0
 
-selected_index = st.slider(
-    "Wähle ein Bild",
-    min_value=0,
-    max_value=len(arome_images)-1,
-    value=0,
-    step=1
-)
-st.image(arome_images[selected_index], use_container_width=True)
-st.caption(f"Bild {selected_index + 1} von {len(arome_images)}")
+def next_image():
+    if st.session_state.index < len(arome_images) - 1:
+        st.session_state.index += 1
 
-# --- Miniaturbild-Galerie zum Scrollen ---
-st.markdown("### Miniaturansicht (klickbar)")
-cols = st.columns(6)
-for i, img_url in enumerate(arome_images):
-    with cols[i % 6]:
-        if st.button(f"", key=f"thumb_{i}"):
-            selected_index = i
-        st.image(img_url, width=80)
+def prev_image():
+    if st.session_state.index > 0:
+        st.session_state.index -= 1
+
+st.markdown("## AROME (von kitewetter.at")
+
+# --- Großes Bild ---
+st.image(arome_images[st.session_state.index], use_container_width=True)
+st.caption(f"Bild {st.session_state.index + 1} von {len(arome_images)}")
+
+# --- Buttons zum schnellen Wechseln ---
+col1, col2 = st.columns([1,1])
+with col1:
+    st.button("⬅ Vorheriges", on_click=prev_image)
+with col2:
+    st.button("Nächstes ➡", on_click=next_image)
 
 # # ======================
 # # 2. Wolken-Schichtplot
