@@ -119,42 +119,44 @@ st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwett
 
 
 # ======================
-# 4. Externen Wetterbereich einbinden
+# 3. AROME Slider (Karussell)
 # ======================
 import requests
 from bs4 import BeautifulSoup
 import streamlit.components.v1 as components
 
-st.header("AROME & ICON Wetterdaten (von kitewetter.at)")
+st.header("AROME Slider (von kitewetter.at)")
 
-# URL der Seite
+# Webseite abrufen
 url = "https://www.kitewetter.at/?page_id=1569"
 res = requests.get(url)
-res.raise_for_status()  # sicherstellen, dass Abruf erfolgreich war
-
+res.raise_for_status()
 soup = BeautifulSoup(res.content, "html.parser")
 
-# Robust: Finde Start- und Endpunkt anhand von Text
-start_header = soup.find(string=lambda text: text and "AROME latest run" in text)
-end_header = soup.find(string=lambda text: text and "ICON 2D" in text)
+# Slider-Bilder extrahieren
+# Prüfe im Browser die Slider-Struktur und ggf. Klasse anpassen
+slider_div = soup.find("div", class_="wpgdpr-gallery-wrapper")
+imgs = [img["src"] for img in slider_div.find_all("img")] if slider_div else []
 
-if start_header and end_header:
-    start_tag = start_header.parent
-    end_tag = end_header.parent
-
-    # Alle Inhalte zwischen Start- und End-Tag sammeln
-    contents = []
-    for tag in start_tag.find_all_next():
-        if tag == end_tag:
-            break
-        contents.append(str(tag))
-
-    html_content = "".join(contents)
-
-    # In Streamlit einbetten
-    components.html(html_content, height=700, scrolling=True)
+if not imgs:
+    st.warning("Keine Slider-Bilder gefunden!")
 else:
-    st.warning("Konnte den gewünschten Bereich auf der Website nicht finden.")
+    # Session State für aktuellen Index
+    if "carousel_index" not in st.session_state:
+        st.session_state.carousel_index = 0
+
+    # Navigation mit Vorher/Nächste-Pfeilen
+    col1, col2, col3 = st.columns([1,6,1])
+    with col1:
+        if st.button("◀️ Vorheriges", key="prev"):
+            st.session_state.carousel_index = (st.session_state.carousel_index - 1) % len(imgs)
+    with col3:
+        if st.button("▶️ Nächstes", key="next"):
+            st.session_state.carousel_index = (st.session_state.carousel_index + 1) % len(imgs)
+
+    # Aktuelles Bild anzeigen
+    st.image(imgs[st.session_state.carousel_index], use_container_width=True)
+    st.caption(f"Bild {st.session_state.carousel_index + 1} von {len(imgs)}")
 
 
 # # ======================
