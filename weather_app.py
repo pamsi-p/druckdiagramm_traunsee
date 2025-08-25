@@ -127,13 +127,13 @@ arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:0
 
 st.markdown("## AROME (von kitewetter.at")
 
-# Scrollbarer Container
-container = st.container()
-with container:
-    cols = st.columns(len(arome_images))
-    for i, col in enumerate(cols):
-        col.image(arome_images[i], use_container_width=True)
-        col.caption(f"{i+1}")
+# HTML mit horizontalem Scrollen
+images_html = "<div style='display:flex; overflow-x: auto; gap:10px;'>"
+for img in arome_images:
+    images_html += f"<div style='flex:0 0 auto;'><img src='{img}' width='200'></div>"
+images_html += "</div>"
+
+st.markdown(images_html, unsafe_allow_html=True)
 
 # # ======================
 # # 2. Wolken-Schichtplot
