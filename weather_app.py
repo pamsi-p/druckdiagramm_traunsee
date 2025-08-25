@@ -109,14 +109,6 @@ fig.update_yaxes(title_text="clouds [Okta]", secondary_y=True, fixedrange=True)
 st.plotly_chart(fig, use_container_width=True)
 
 # ======================
-# 2. Profiwetter Bild
-# ======================
-
-st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
-
-
-
-# ======================
 # 3. Wolken-Schichtplot
 # ======================
 fig_clouds = go.Figure()
@@ -161,3 +153,12 @@ fig_wind.update_layout(
     dragmode="zoom"
 )
 st.plotly_chart(fig_wind, use_container_width=True)
+
+
+# ======================
+# 2. Profiwetter Bild
+# ======================
+
+st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
+
+
