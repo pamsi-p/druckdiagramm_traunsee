@@ -127,10 +127,18 @@ arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:0
 
 st.markdown("## AROME (von kitewetter.at")
 
-# HTML mit horizontalem Scrollen
-images_html = "<div style='display:flex; overflow-x: auto; gap:10px;'>"
+# ======================
+# Horizontales Scrollen per HTML/CSS
+# ======================
+images_html = """
+<div style='display:flex; overflow-x:auto; gap:10px; padding:10px;'>
+"""
 for img in arome_images:
-    images_html += f"<div style='flex:0 0 auto;'><img src='{img}' width='200'></div>"
+    images_html += f"""
+    <div style='flex:0 0 auto;'>
+        <img src='{img}' width='250' style='border-radius:8px; box-shadow: 0 2px 5px rgba(0,0,0,0.3);'>
+    </div>
+    """
 images_html += "</div>"
 
 st.markdown(images_html, unsafe_allow_html=True)
