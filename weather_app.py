@@ -87,6 +87,16 @@ if df.index.min() <= now <= df.index.max():
     fig.add_shape(type="line", x0=now, x1=now, y0=0, y1=1, line=dict(color="orange", width=3, dash="dot"), xref="x", yref="paper")
     fig.add_annotation(x=now, y=1, text="Jetzt", showarrow=False, xanchor="left", xref="x", yref="paper", font=dict(color="orange"))
 
+
+# --- Horizontale Linie bei 1.5 hPa ---
+fig.add_hline(
+    y=1.5,
+    line=dict(color="red", dash="dash"),
+    annotation_text="Oberwind Süd",
+    annotation_position="top right"
+)
+
+
 # --- Layout ---
 fig.update_layout(
     title="Druckdifferenz und Gesamtbewölkung",
@@ -99,6 +109,13 @@ fig.update_layout(
 fig.update_yaxes(title_text="clouds [Okta]", secondary_y=True, fixedrange=True)
 
 st.plotly_chart(fig, use_container_width=True)
+
+# ======================
+# 2. Profiwetter Bild
+# ======================
+
+st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
+
 
 # ======================
 # 2. Wolken-Schichtplot
