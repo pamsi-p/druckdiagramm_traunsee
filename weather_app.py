@@ -125,7 +125,7 @@ import requests
 from bs4 import BeautifulSoup
 import streamlit.components.v1 as components
 
-st.header("AROME Wetterdaten (von kitewetter.at)")
+st.header("AROME & ICON Wetterdaten (von kitewetter.at)")
 
 # URL der Seite
 url = "https://www.kitewetter.at/?page_id=1569"
@@ -134,34 +134,27 @@ res.raise_for_status()  # sicherstellen, dass Abruf erfolgreich war
 
 soup = BeautifulSoup(res.content, "html.parser")
 
-# Überschriften als Ankerpunkte
-start_header = soup.find(lambda tag: tag.name in ["h2","h3"] and "AROME latest run" in tag.text)
-end_header = soup.find(lambda tag: tag.name in ["h2","h3"] and "ICON 2D" in tag.text)
+# Robust: Finde Start- und Endpunkt anhand von Text
+start_header = soup.find(string=lambda text: text and "AROME latest run" in text)
+end_header = soup.find(string=lambda text: text and "ICON 2D" in text)
 
 if start_header and end_header:
-    # Alle Inhalte zwischen Start- und End-Header sammeln
+    start_tag = start_header.parent
+    end_tag = end_header.parent
+
+    # Alle Inhalte zwischen Start- und End-Tag sammeln
     contents = []
-    for tag in start_header.find_all_next():
-        if tag == end_header:
+    for tag in start_tag.find_all_next():
+        if tag == end_tag:
             break
         contents.append(str(tag))
 
     html_content = "".join(contents)
 
-    # In Streamlit anzeigen
-    components.html(html_content, height=600, scrolling=True)
+    # In Streamlit einbetten
+    components.html(html_content, height=700, scrolling=True)
 else:
     st.warning("Konnte den gewünschten Bereich auf der Website nicht finden.")
-
-
-
-
-
-
-
-
-
-
 
 
 # # ======================
