@@ -121,42 +121,77 @@ st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwett
 # ======================
 # 3. AROME Slider (Karussell)
 # ======================
-import requests
-from bs4 import BeautifulSoup
-import streamlit.components.v1 as components
+import streamlit as st
 
-st.header("AROME Slider (von kitewetter.at)")
+# --- AROME Slider Bilderliste ---
+arome_images = [
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_01.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_02.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_03.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_04.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_05.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_06.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_07.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_08.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_09.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_10.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_11.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_12.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_13.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_14.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_15.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_16.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_17.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_18.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_19.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_20.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_21.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_22.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_23.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_24.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_25.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_26.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_27.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_28.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_29.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_30.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_31.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_32.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_33.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_34.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_35.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_36.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_37.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_38.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_39.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_40.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_41.png",
+    "https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_42.png"
+]
 
-# Webseite abrufen
-url = "https://www.kitewetter.at/?page_id=1569"
-res = requests.get(url)
-res.raise_for_status()
-soup = BeautifulSoup(res.content, "html.parser")
+# --- Streamlit Karussell ---
+st.markdown("## AROME Prognose (von kitewetter.at)")
 
-# Slider-Bilder extrahieren
-# Prüfe im Browser die Slider-Struktur und ggf. Klasse anpassen
-slider_div = soup.find("div", class_="wpgdpr-gallery-wrapper")
-imgs = [img["src"] for img in slider_div.find_all("img")] if slider_div else []
+if "arome_index" not in st.session_state:
+    st.session_state.arome_index = 0
 
-if not imgs:
-    st.warning("Keine Slider-Bilder gefunden!")
-else:
-    # Session State für aktuellen Index
-    if "carousel_index" not in st.session_state:
-        st.session_state.carousel_index = 0
+col1, col2, col3 = st.columns([1, 6, 1])
 
-    # Navigation mit Vorher/Nächste-Pfeilen
-    col1, col2, col3 = st.columns([1,6,1])
-    with col1:
-        if st.button("◀️ Vorheriges", key="prev"):
-            st.session_state.carousel_index = (st.session_state.carousel_index - 1) % len(imgs)
-    with col3:
-        if st.button("▶️ Nächstes", key="next"):
-            st.session_state.carousel_index = (st.session_state.carousel_index + 1) % len(imgs)
+with col1:
+    if st.button("⬅️ Vorheriges"):
+        st.session_state.arome_index -= 1
+        if st.session_state.arome_index < 0:
+            st.session_state.arome_index = len(arome_images) - 1
 
-    # Aktuelles Bild anzeigen
-    st.image(imgs[st.session_state.carousel_index], use_container_width=True)
-    st.caption(f"Bild {st.session_state.carousel_index + 1} von {len(imgs)}")
+with col3:
+    if st.button("Nächstes ➡️"):
+        st.session_state.arome_index += 1
+        if st.session_state.arome_index >= len(arome_images):
+            st.session_state.arome_index = 0
+
+with col2:
+    st.image(arome_images[st.session_state.arome_index], use_column_width=True)
+    st.caption(f"Bild {st.session_state.arome_index + 1} von {len(arome_images)}")
 
 
 # # ======================
