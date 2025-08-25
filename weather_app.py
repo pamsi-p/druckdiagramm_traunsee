@@ -6,9 +6,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import date, timedelta
 
-# 🔧 Fix für inotify-Watcher-Fehler in manchen Umgebungen
-# Verhindert "inotify instance limit reached" durch Wechsel auf Polling
-st.set_option("server.fileWatcherType", "poll")
 
 # ======================
 # Orte & Koordinaten
