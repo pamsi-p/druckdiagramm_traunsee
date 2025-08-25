@@ -131,18 +131,14 @@ st.markdown("## AROME (von kitewetter.at)")
 # Horizontales Scrollen per HTML/CSS
 # ======================
 
-images_html = "<div style='display:flex; overflow-x:auto; gap:10px; padding:10px;'>"
-for img in arome_images:
-    images_html += f"""
-    <div style='flex:0 0 auto;'>
-        <img src='{img}' width='250' style='border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.3);'>
-    </div>
-    """
-images_html += "</div>"
+# HTML für horizontal scrollbaren Bereich
+scrollable_html = "<div style='display:flex; overflow-x:auto; gap:10px; padding:10px;'>"
+for img_url in arome_images:
+    scrollable_html += f"<img src='{img_url}' style='height:300px;'>"
+scrollable_html += "</div>"
 
-# Hier wirklich als HTML rendern
-st.markdown(images_html, unsafe_allow_html=True)
-
+# Streamlit-Display
+st.markdown(scrollable_html, unsafe_allow_html=True)
 
 # # ======================
 # # 2. Wolken-Schichtplot
