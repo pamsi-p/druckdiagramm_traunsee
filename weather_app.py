@@ -125,30 +125,15 @@ st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwett
 # --- AROME Slider Bilderliste ---
 arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png" for i in range(1, 43)]
 
-# --- Session State für aktuellen Index ---
-if "index" not in st.session_state:
-    st.session_state.index = 0
-
-def next_image():
-    if st.session_state.index < len(arome_images) - 1:
-        st.session_state.index += 1
-
-def prev_image():
-    if st.session_state.index > 0:
-        st.session_state.index -= 1
-
 st.markdown("## AROME (von kitewetter.at")
 
-# --- Großes Bild ---
-st.image(arome_images[st.session_state.index], use_container_width=True)
-st.caption(f"Bild {st.session_state.index + 1} von {len(arome_images)}")
-
-# --- Buttons zum schnellen Wechseln ---
-col1, col2 = st.columns([1,1])
-with col1:
-    st.button("⬅ Vorheriges", on_click=prev_image)
-with col2:
-    st.button("Nächstes ➡", on_click=next_image)
+# Scrollbarer Container
+container = st.container()
+with container:
+    cols = st.columns(len(arome_images))
+    for i, col in enumerate(cols):
+        col.image(arome_images[i], use_container_width=True)
+        col.caption(f"{i+1}")
 
 # # ======================
 # # 2. Wolken-Schichtplot
