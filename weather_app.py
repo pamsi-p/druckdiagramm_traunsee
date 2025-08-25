@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import date, timedelta
 
-
 # ======================
 # Orte & Koordinaten
 # ======================
@@ -28,28 +27,12 @@ def fetch_openmeteo(start, end, lat, lon):
         "hourly": "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,wind_speed_10m,wind_direction_10m",
         "timezone": "Europe/Vienna"
     }
-
-    # 🔧 Netzwerkaussetzer abfangen: Timeouts + einfache Retries
-    last_err = None
-    for _ in range(3):  # bis zu 3 Versuche
-        try:
-            r = requests.get(url, params=params, timeout=30)
-            r.raise_for_status()
-            data = r.json()["hourly"]
-            df = pd.DataFrame(data)
-            df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna", nonexistent="shift_forward", ambiguous="NaT")
-            df.set_index("time", inplace=True)
-            # ggf. ambige Zeiten (Sommer-/Winterzeit) entfernen
-            df = df[~df.index.isna()]
-            return df
-        except requests.exceptions.Timeout as e:
-            last_err = e
-            continue
-        except requests.exceptions.RequestException as e:
-            last_err = e
-            continue
-    # nach 3 Fehlversuchen sauber aborten
-    raise RuntimeError(f"Open-Meteo Abruf fehlgeschlagen: {last_err}")
+    r = requests.get(url, params=params)
+    r.raise_for_status()
+    df = pd.DataFrame(r.json()["hourly"])
+    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
+    df.set_index("time", inplace=True)
+    return df
 
 # ======================
 # UI & Datenvorbereitung
@@ -104,6 +87,14 @@ if df.index.min() <= now <= df.index.max():
     fig.add_shape(type="line", x0=now, x1=now, y0=0, y1=1, line=dict(color="orange", width=3, dash="dot"), xref="x", yref="paper")
     fig.add_annotation(x=now, y=1, text="Jetzt", showarrow=False, xanchor="left", xref="x", yref="paper", font=dict(color="orange"))
 
+# --- Horizontale Linie bei 1.5 hPa ---
+fig.add_hline(
+    y=1.5,
+    line=dict(color="red", dash="dash"),
+    annotation_text="Oberwind Süd",
+    annotation_position="top right"
+)
+
 # --- Layout ---
 fig.update_layout(
     title="Druckdifferenz und Gesamtbewölkung",
@@ -118,7 +109,55 @@ fig.update_yaxes(title_text="clouds [Okta]", secondary_y=True, fixedrange=True)
 st.plotly_chart(fig, use_container_width=True)
 
 # ======================
-# 2. Wolken-Schichtplot
+# 2. Profiwetter Bild
+# ======================
+
+st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
+
+# ======================
+# 4. AROME Windfeld
+# ======================
+st.header("AROME Windfeld")
+
+# Beispiel: lokale AROME-Datei laden
+# -> hier musst du Pfad anpassen oder Download per API einbauen
+try:
+    ds = xr.open_dataset("arome_sample.nc")  # ⚠️ ersetzen durch deine Datei
+    lat = ds["latitude"].values
+    lon = ds["longitude"].values
+    u = ds["u10"].values[0]  # Ost-Komponente 10m Wind
+    v = ds["v10"].values[0]  # Nord-Komponente 10m Wind
+    wind = np.sqrt(u**2 + v**2) * 3.6  # m/s -> km/h
+
+    # Plot bauen
+    fig_arome, ax = plt.subplots(figsize=(8, 6))
+    c = ax.contourf(lon, lat, wind, cmap="jet", levels=np.linspace(0, 120, 13))
+    q = ax.quiver(lon[::4], lat[::4], u[::4, ::4], v[::4, ::4], scale=500)
+
+    # Seeufer-Linie (Dummy – kannst du durch GeoJSON oder exakte Koordinaten ersetzen)
+    lake_lon = [11.67, 11.69, 11.72, 11.75]
+    lake_lat = [47.41, 47.45, 47.48, 47.50]
+    ax.plot(lake_lon, lake_lat, color="lime", linewidth=2, label="Seeufer")
+
+    # Kitespot markieren
+    ax.scatter(11.71, 47.44, color="lime", marker="x", s=100, label="Kitespot")
+
+    ax.set_xlabel("Längengrad / Longitude")
+    ax.set_ylabel("Breitengrad / Latitude")
+    ax.set_title("AROME Windfeld (10m)")
+    fig_arome.colorbar(c, ax=ax, label="Windgeschwindigkeit [km/h]")
+    ax.legend()
+
+    st.pyplot(fig_arome)
+
+except Exception as e:
+    st.warning(f"AROME-Daten konnten nicht geladen werden: {e}")
+
+
+
+
+# ======================
+# 3. Wolken-Schichtplot
 # ======================
 fig_clouds = go.Figure()
 for col, name, color in [
@@ -140,7 +179,7 @@ fig_clouds.update_layout(
 st.plotly_chart(fig_clouds, use_container_width=True)
 
 # ======================
-# 3. Winddiagramm
+# 4. Winddiagramm
 # ======================
 fig_wind = go.Figure()
 
