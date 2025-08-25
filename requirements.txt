@@ -3,3 +3,5 @@ meteostat
 matplotlib
 pandas
 plotly
+beautifulsoup4
+requests
