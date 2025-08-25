@@ -1,132 +1,240 @@
-# app.py
 import streamlit as st
+from datetime import datetime, timedelta
+from meteostat import Point, Hourly
 import pandas as pd
-import requests
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import date, timedelta
+import matplotlib.pyplot as plt
+import os
 
-# ======================
-# Orte & Koordinaten
-# ======================
-coords = {
-    "Traunkirchen": (47.993, 13.745),
-    "Gmunden": (47.918, 13.799),
-    "Bad_Ischl": (47.714, 13.632),
-    "Ried": (48.198, 13.490)
-}
+# -------------------------------
+# Function to fetch hourly weather data
+# -------------------------------
+def fetch_hourly_weather_data(latitude, longitude, start_date, end_date):
+    """
+    Fetch hourly weather data for a given location and date range.
+    """
+    start_date = datetime.combine(start_date, datetime.min.time())
+    end_date = datetime.combine(end_date, datetime.min.time())
 
-# ======================
-# Wetterdaten abrufen
-# ======================
-def fetch_openmeteo(start, end, lat, lon):
-    url = "https://archive-api.open-meteo.com/v1/archive" if end <= date.today() else "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": lat, "longitude": lon,
-        "start_date": start.isoformat(), "end_date": end.isoformat(),
-        "hourly": "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,wind_speed_10m,wind_direction_10m",
-        "timezone": "Europe/Vienna"
-    }
-    r = requests.get(url, params=params)
-    r.raise_for_status()
-    df = pd.DataFrame(r.json()["hourly"])
-    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
-    df.set_index("time", inplace=True)
-    return df
+    location = Point(latitude, longitude)
 
-# ======================
-# UI & Datenvorbereitung
-# ======================
-st.title("Traunsee Druckgradient")
+    data = Hourly(location, start_date, end_date).fetch()
 
-start_date = st.date_input("Startdatum", date.today() - timedelta(days=5))
-end_date = st.date_input("Enddatum", date.today() + timedelta(days=7))
+    if 'tsun' in data.columns:
+        data['Cloud_Cover_Proxy'] = 1 - (data['tsun'] / 60)
 
-if end_date < start_date:
-    st.error("Enddatum muss nach Startdatum sein")
-    st.stop()
+    return data
 
-# Daten abrufen
-dfs = {name: fetch_openmeteo(start_date, end_date, lat, lon) for name, (lat, lon) in coords.items()}
 
-# Druckdifferenzen & Zusatzdaten
-df = dfs["Traunkirchen"].rename(columns={"pressure_msl": "P_T"})
-df["P_G"] = dfs["Gmunden"]["pressure_msl"]
-df["P_B"] = dfs["Bad_Ischl"]["pressure_msl"]
-df["P_R"] = dfs["Ried"]["pressure_msl"]
-df["delta_P_TG"] = df["P_T"] - df["P_G"]
-df["delta_P_BR"] = df["P_B"] - df["P_R"]
-df["wind_speed_kt"] = dfs["Traunkirchen"]["wind_speed_10m"] * 1.94384
-df["wind_dir"] = dfs["Traunkirchen"]["wind_direction_10m"]
+# -------------------------------
+# Function to process sensor data
+# -------------------------------
+def process_sensor_data(file):
+    """
+    Process sensor data from a .txt file and return a DataFrame.
+    """
+    data = pd.read_csv(file, sep=';', quotechar='"', encoding='ISO-8859-1', skiprows=7)
 
-# ======================
-# 1. ΔP & Gesamtbewölkung
-# ======================
-fig = make_subplots(specs=[[{"secondary_y": True}]])
+    date_column = data.columns[0]
+    time_column = data.columns[1]
+    ir20_column = data.columns[16]
 
-fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_TG"], name="ΔP Traunkirchen–Gmunden", line=dict(color="grey")), secondary_y=False)
-fig.add_trace(go.Scatter(x=df.index, y=df["delta_P_BR"], name="ΔP Bad Ischl–Ried", line=dict(color="deepskyblue")), secondary_y=False)
-fig.add_trace(go.Scatter(x=df.index, y=df["cloud_cover"], name="clouds total [Okta]", line=dict(color="black")), secondary_y=True)
+    data['Datetime'] = pd.to_datetime(
+        data[date_column].astype(str) + ' ' + data[time_column].astype(str),
+        dayfirst=True
+    )
 
-fig.add_shape(type="line", x0=df.index.min(), x1=df.index.max(), y0=1.5, y1=1.5, line=dict(color="red", dash="dash"), yref="y", xref="x")
-fig.add_annotation(x=df.index.max(), y=1.5, text="Oberwind – Süd", showarrow=False, yanchor="bottom", xanchor="right")
+    data[ir20_column] = pd.to_numeric(data[ir20_column], errors='coerce')
+    data.dropna(subset=['Datetime', ir20_column], inplace=True)
+    data['Date'] = data['Datetime'].dt.date
 
-now = pd.Timestamp.now(tz="Europe/Vienna")
-if df.index.min() <= now <= df.index.max():
-    fig.add_shape(type="line", x0=now, x1=now, y0=0, y1=1, line=dict(color="orange", width=4, dash="dot"), xref="x", yref="paper")
-    fig.add_annotation(x=now, y=1, text="Heute", showarrow=False, xanchor="left", xref="x", yref="paper", font=dict(color="orange"))
+    downsampled_data = data.iloc[::10].copy()
+    data['Rolling_IR20'] = data[ir20_column].rolling(window=30).mean()
 
-fig.update_layout(
-    title="Druckdifferenz und Gesamtbewölkung",
-    xaxis_title="Datum",
-    yaxis_title="ΔP [hPa]",
-    legend=dict(orientation="h", y=-0.25),
-    margin=dict(t=50, b=60)
-)
-fig.update_yaxes(title_text="clouds [Okta]", secondary_y=True)
+    return data, downsampled_data, ir20_column
 
-st.plotly_chart(fig, use_container_width=True)
 
-# ======================
-# 2. Wolken-Schichtplot
-# ======================
-fig_clouds = go.Figure()
-for col, name, color in [
-    ("cloud_cover_low", "Wolken unten", "lightblue"),
-    ("cloud_cover_mid", "Wolken Mitte", "deepskyblue"),
-    ("cloud_cover_high", "Wolken oben", "dodgerblue")
-]:
-    fig_clouds.add_trace(go.Scatter(x=df.index, y=df[col], mode='lines', name=name, stackgroup='cloud', line=dict(width=0.5, color=color)))
+# -------------------------------
+# Function to plot weather data
+# -------------------------------
+def plot_weather_data(weather_data):
+    """
+    Plot weather parameters for better interpretation.
+    """
+    st.subheader("Weather Parameter Plots")
 
-fig_clouds.update_layout(
-    title='Wolkenbedeckung (Traunkirchen)',
-    xaxis_title='Zeit',
-    yaxis_title='Wolkenbedeckung (Anteil)',
-    yaxis=dict(range=[0, 4]),
-    legend=dict(orientation='h', y=1.1),
-    margin=dict(t=50, b=60)
-)
-st.plotly_chart(fig_clouds, use_container_width=True)
+    # Mark "today" with yellow background
+    today = datetime.now().date()
+    start_today = datetime.combine(today, datetime.min.time())
+    end_today = datetime.combine(today, datetime.max.time())
 
-# ======================
-# 3. Winddiagramm
-# ======================
-fig_wind = go.Figure()
+    # Cloud Cover Proxy Plot
+    if 'Cloud_Cover_Proxy' in weather_data.columns:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(weather_data.index, weather_data['Cloud_Cover_Proxy'], label="Cloud Cover Proxy", color="blue")
+        ax.axvspan(start_today, end_today, color="yellow", alpha=0.2, label="Heute")
+        ax.set_title("Hourly Cloud Cover Proxy")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Cloud Cover Proxy")
+        ax.legend()
+        ax.grid(True)
+        st.pyplot(fig)
 
-fig_wind.add_trace(go.Scatter(
-    x=df.index, y=df["wind_speed_kt"], mode='lines+markers',
-    name='Windstärke (kt)', line=dict(color='orange'), yaxis='y1'))
+    # Average Temperature Plot
+    if 'tavg' in weather_data.columns:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(weather_data.index, weather_data['tavg'], label="Temperature (°C)", color="orange")
+        ax.axvspan(start_today, end_today, color="yellow", alpha=0.2, label="Heute")
+        ax.set_title("Hourly Temperature")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Temperature (°C)")
+        ax.legend()
+        ax.grid(True)
+        st.pyplot(fig)
 
-fig_wind.add_trace(go.Scatter(
-    x=df.index, y=df["wind_dir"], mode='lines',
-    name='Windrichtung (°)', line=dict(color='green', dash='dot'), yaxis='y2'))
+    # Wind Speed Plot
+    if 'wspd' in weather_data.columns:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(weather_data.index, weather_data['wspd'], label="Wind Speed (km/h)", color="green")
+        ax.axvspan(start_today, end_today, color="yellow", alpha=0.2, label="Heute")
+        ax.set_title("Hourly Wind Speed")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Wind Speed (km/h)")
+        ax.legend()
+        ax.grid(True)
+        st.pyplot(fig)
 
-fig_wind.update_layout(
-    title='Windstärke & Windrichtung (Traunkirchen)',
-    xaxis_title='Zeit',
-    yaxis=dict(title='Windstärke (kt)', range=[0, df["wind_speed_kt"].max() * 1.2]),
-    yaxis2=dict(title='Windrichtung (°)', overlaying='y', side='right', range=[0, 360], showgrid=False),
-    legend=dict(orientation='h', y=1.1),
-    margin=dict(t=50, b=60)
-)
-st.plotly_chart(fig_wind, use_container_width=True)
+    # Pressure Plot
+    if 'pres' in weather_data.columns:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(weather_data.index, weather_data['pres'], label="Pressure (hPa)", color="purple")
+        ax.axvspan(start_today, end_today, color="yellow", alpha=0.2, label="Heute")
+        ax.set_title("Hourly Pressure")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Pressure (hPa)")
+        ax.legend()
+        ax.grid(True)
+        st.pyplot(fig)
+
+    # Sunshine Duration Plot
+    if 'tsun' in weather_data.columns:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(weather_data.index, weather_data['tsun'], label="Sunshine Duration (minutes)", color="red")
+        ax.axvspan(start_today, end_today, color="yellow", alpha=0.2, label="Heute")
+        ax.set_title("Hourly Sunshine Duration")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Sunshine Duration (minutes)")
+        ax.legend()
+        ax.grid(True)
+        st.pyplot(fig)
+
+
+# -------------------------------
+# Function to plot sensor data
+# -------------------------------
+def plot_sensor_data(data, downsampled_data, ir20_column, unique_dates):
+    """
+    Plot sensor data for all available dates.
+    """
+    today = datetime.now().date()
+    start_today = datetime.combine(today, datetime.min.time())
+    end_today = datetime.combine(today, datetime.max.time())
+
+    # Full Plot with All Data
+    st.subheader("Full Plot of Sensor Data")
+    fig, ax = plt.subplots(figsize=(14, 7))
+    ax.plot(data['Datetime'], data[ir20_column], marker='o', color='orange', alpha=0.5, label="IR20-E-korrigiert")
+    ax.plot(data['Datetime'], data['Rolling_IR20'], color='blue', linewidth=2, label="30-Point Rolling Mean")
+    ax.axvspan(start_today, end_today, color="yellow", alpha=0.2, label="Heute")
+    ax.set_title("IR20-E-korrigiert Over Entire Time Period")
+    ax.set_xlabel("Datetime")
+    ax.set_ylabel("IR20-E-korrigiert")
+    ax.legend()
+    ax.grid(True)
+    st.pyplot(fig)
+
+    # Plot Each Day Separately
+    st.subheader("Daily Plots of Sensor Data")
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    axes = axes.flatten()
+
+    for i, day in enumerate(unique_dates[:4]):  # Limit to 4 days
+        daily_data = data[data['Date'] == day]
+        downsampled_daily_data = downsampled_data[downsampled_data['Date'] == day]
+
+        axes[i].plot(downsampled_daily_data['Datetime'], downsampled_daily_data[ir20_column],
+                     marker='o', color='orange', alpha=0.5, label="Downsampled IR20-E-korrigiert")
+        axes[i].plot(daily_data['Datetime'], daily_data['Rolling_IR20'], color='blue', linewidth=2, label="30-Point Rolling Mean")
+
+        axes[i].axvspan(start_today, end_today, color="yellow", alpha=0.2)
+
+        axes[i].set_title(f"IR20-E-korrigiert on {day}")
+        axes[i].set_xlabel("Time")
+        axes[i].set_ylabel("IR20-E-korrigiert")
+        axes[i].legend()
+        axes[i].grid(True)
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+
+# -------------------------------
+# Streamlit Application
+# -------------------------------
+st.title("Weather and Sensor Data Analysis App")
+
+st.sidebar.header("Input Parameters")
+latitude = st.sidebar.number_input("Enter Latitude", value=50.9808, step=0.0001, format="%.4f")
+longitude = st.sidebar.number_input("Enter Longitude", value=11.3290, step=0.0001, format="%.4f")
+
+sensor_file = st.sidebar.file_uploader("Upload Sensor Data (.txt)", type=["txt"])
+data_option = st.sidebar.radio("Select Data Option", ["Single Day", "Multiple Days"])
+
+# Default: Heute + 2 Tage
+default_start = datetime.now().date()
+default_end = default_start + timedelta(days=2)
+
+if data_option == "Single Day":
+    selected_date = st.sidebar.date_input("Select Date", value=default_start)
+
+    if st.sidebar.button("Fetch and Plot Data for Single Day"):
+        with st.spinner("Fetching weather data..."):
+            weather_data = fetch_hourly_weather_data(latitude, longitude, selected_date, selected_date + timedelta(days=1))
+            st.success("Weather data fetched successfully!")
+            plot_weather_data(weather_data)
+
+        if sensor_file:
+            with st.spinner("Processing sensor data..."):
+                sensor_data, downsampled_sensor_data, ir20_column = process_sensor_data(sensor_file)
+                unique_dates = sensor_data['Date'].unique()
+                st.success("Sensor data processed successfully!")
+                plot_sensor_data(sensor_data, downsampled_sensor_data, ir20_column, unique_dates)
+
+elif data_option == "Multiple Days":
+    start_date = st.sidebar.date_input("Start Date", value=default_start)
+    end_date = st.sidebar.date_input("End Date", value=default_end)
+
+    if st.sidebar.button("Fetch and Plot Data for Multiple Days"):
+        with st.spinner("Fetching weather data..."):
+            weather_data = fetch_hourly_weather_data(latitude, longitude, start_date, end_date)
+            st.success("Weather data fetched successfully!")
+            plot_weather_data(weather_data)
+
+        if sensor_file:
+            with st.spinner("Processing sensor data..."):
+                sensor_data, downsampled_sensor_data, ir20_column = process_sensor_data(sensor_file)
+                unique_dates = sensor_data['Date'].unique()
+                st.success("Sensor data processed successfully!")
+                plot_sensor_data(sensor_data, downsampled_sensor_data, ir20_column, unique_dates)
+
+if st.sidebar.button("Show Parameter Definitions"):
+    st.subheader("Parameter Definitions")
+    st.markdown("""
+    - **Cloud Cover Proxy**: A calculated proxy for cloud cover, where 1 indicates full cloud cover and 0 indicates no cloud cover. It is derived from sunshine duration data.
+    - **Temperature (°C)**: The average air temperature at the location.
+    - **Wind Speed (km/h)**: The average speed of wind over the time period.
+    - **Pressure (hPa)**: Atmospheric pressure measured at sea level.
+    - **Sunshine Duration (minutes)**: The total duration of sunshine received during the hour.
+    - **IR20-E-korrigiert**: A measurement of longwave radiation recorded by the sensor.
+    """)
+
+st.sidebar.markdown("Developed by Midhun Kanadan - Weather and Sensor Data Analysis")
