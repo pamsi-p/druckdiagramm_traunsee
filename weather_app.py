@@ -142,7 +142,7 @@ fig.add_hline(
 # --- Horizontale Linie bei 0 hPa ---
 fig.add_hline(
     y=0,
-    line=dict(color="black")
+    line=dict(color="black", dash="dot")
 )
 
 # --- Layout ---
@@ -189,7 +189,7 @@ st.plotly_chart(fig_wind, use_container_width=True)
 # ======================
 # --- AROME Slider Bilderliste ---
 arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png" for i in range(1, 43)]
-st.markdown("#### AROME (von kitewetter.at)")
+st.markdown("###### AROME (von kitewetter.at)")
 
 # HTML für horizontal scrollbaren Bereich
 scrollable_html = "<div style='display:flex; overflow-x:auto; gap:10px; padding:10px;'>"
@@ -202,7 +202,7 @@ st.markdown(scrollable_html, unsafe_allow_html=True)
 # ======================
 # 2. Profiwetter Bild
 # ======================
-st.markdown("#### profiwetter.ch - Traunkirchen")
+st.markdown("###### profiwetter.ch - Traunkirchen")
 st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
 
 
