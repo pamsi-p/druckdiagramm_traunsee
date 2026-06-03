@@ -108,21 +108,15 @@ HOURLY_VARS = "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_co
 # API-Abruf: Archiv + Forecast zusammengeführt
 # ======================
 def _get(url, params):
-    """Single HTTP GET mit Retry — 429 bekommt extra Wartezeit."""
-    for attempt in range(4):
-        try:
-            r = requests.get(url, params=params, timeout=15)
-            if r.status_code == 429:
-                wait = 5 * (attempt + 1)
-                time.sleep(wait)
-                continue
-            r.raise_for_status()
-            return r.json()
-        except requests.exceptions.RequestException:
-            if attempt == 3:
-                raise
-            time.sleep(2 ** attempt)
-    raise requests.exceptions.HTTPError("Max retries exceeded (429)")
+    """Single HTTP GET — wartet bei 429 und versucht es erneut."""
+    for attempt in range(5):
+        r = requests.get(url, params=params, timeout=20)
+        if r.status_code == 429:
+            time.sleep(10 * (attempt + 1))   # 10s, 20s, 30s, 40s, 50s
+            continue
+        r.raise_for_status()
+        return r.json()
+    raise requests.exceptions.HTTPError("Rate limit: zu viele Anfragen an Open-Meteo.")
 
 
 def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFrame:
@@ -150,13 +144,13 @@ def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFra
     return df
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def fetch_all(start: date, end: date) -> dict:
-    """Sequenziell mit 0.8s Pause — verhindert 429 Rate Limit."""
+    """Sequenziell mit 2s Pause zwischen Orten — verhindert 429."""
     results = {}
     for name, (lat, lon) in COORDS.items():
         results[name] = fetch_location(start, end, lat, lon)
-        time.sleep(0.8)
+        time.sleep(2)
     return results
 
 
