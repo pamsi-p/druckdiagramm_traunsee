@@ -36,25 +36,129 @@ coords = {
 }
 
 # ======================
-# Wetterdaten abrufen
+# Wetterdaten abrufen (robust)
 # ======================
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_openmeteo(start, end, lat, lon):
-    url = "https://archive-api.open-meteo.com/v1/archive" if end <= date.today() else "https://api.open-meteo.com/v1/forecast"
+
+    today = date.today()
+
+    if end <= today:
+        url = "https://archive-api.open-meteo.com/v1/archive"
+
+    elif start >= today:
+        url = "https://api.open-meteo.com/v1/forecast"
+
+    else:
+        raise ValueError(
+            "Gemischter Zeitraum erkannt"
+        )
+
     params = {
         "latitude": lat,
         "longitude": lon,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
-        "hourly": "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,wind_speed_10m,wind_direction_10m",
+        "hourly": (
+            "pressure_msl,"
+            "cloud_cover,"
+            "cloud_cover_low,"
+            "cloud_cover_mid,"
+            "cloud_cover_high,"
+            "wind_speed_10m,"
+            "wind_direction_10m"
+        ),
         "timezone": "Europe/Vienna"
     }
-    r = requests.get(url, params=params)
-    r.raise_for_status()
-    df = pd.DataFrame(r.json()["hourly"])
-    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
-    df.set_index("time", inplace=True)
-    return df
 
+    last_exception = None
+
+    for attempt in range(3):
+
+        try:
+
+            r = requests.get(
+                url,
+                params=params,
+                timeout=20
+            )
+
+            if r.status_code != 200:
+                raise Exception(
+                    f"HTTP {r.status_code}: {r.text}"
+                )
+
+            data = r.json()
+
+            if "hourly" not in data:
+                raise Exception(
+                    f"Keine hourly-Daten erhalten: {data}"
+                )
+
+            df = pd.DataFrame(data["hourly"])
+
+            df["time"] = pd.to_datetime(df["time"])
+
+            df["time"] = df["time"].dt.tz_localize(
+                "Europe/Vienna",
+                ambiguous="infer",
+                nonexistent="shift_forward"
+            )
+
+            df.set_index("time", inplace=True)
+
+            return df
+
+        except Exception as e:
+
+            last_exception = e
+
+            logging.warning(
+                f"Open-Meteo Versuch {attempt+1}/3 fehlgeschlagen: {e}"
+            )
+
+            time.sleep(2)
+
+    raise last_exception
+
+
+def fetch_openmeteo_mixed(start, end, lat, lon):
+
+    today = date.today()
+
+    if end <= today:
+        return fetch_openmeteo(start, end, lat, lon)
+
+    if start >= today:
+        return fetch_openmeteo(start, end, lat, lon)
+
+    archive_df = fetch_openmeteo(
+        start,
+        today,
+        lat,
+        lon
+    )
+
+    forecast_df = fetch_openmeteo(
+        today + timedelta(days=1),
+        end,
+        lat,
+        lon
+    )
+
+    return pd.concat(
+        [archive_df, forecast_df]
+    ).sort_index()
+    
 # ======================
 # UI & Datenvorbereitung
 # ======================
@@ -71,8 +175,61 @@ if end_date < start_date:
     st.error("Enddatum muss nach Startdatum sein")
     st.stop()
 
-# Daten abrufen
-dfs = {name: fetch_openmeteo(start_date, end_date, lat, lon) for name, (lat, lon) in coords.items()}
+# Daten abrufen (parallel)
+
+dfs = {}
+
+with st.spinner("Lade Wetterdaten ..."):
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+
+        futures = {
+            executor.submit(
+                fetch_openmeteo_mixed,
+                start_date,
+                end_date,
+                lat,
+                lon
+            ): name
+            for name, (lat, lon) in coords.items()
+        }
+
+        for future in as_completed(futures):
+
+            name = futures[future]
+
+            try:
+                dfs[name] = future.result()
+
+            except Exception as e:
+
+                logging.error(
+                    f"{name}: {e}"
+                )
+
+                st.warning(
+                    f"Wetterdaten für {name} konnten nicht geladen werden."
+                )
+
+required = [
+    "Traunkirchen",
+    "Gmunden",
+    "Bad_Ischl",
+    "Ried"
+]
+
+missing = [
+    x for x in required
+    if x not in dfs
+]
+
+if missing:
+
+    st.error(
+        f"Fehlende Wetterdaten: {', '.join(missing)}"
+    )
+
+    st.stop()
 
 # Druckdifferenzen & Zusatzdaten
 df = dfs["Traunkirchen"].rename(columns={"pressure_msl": "P_T"})
@@ -103,7 +260,7 @@ fig.add_trace(go.Scatter(
 
 fig.add_trace(go.Scatter(
     x=df.index, y=df["cloud_cover"],
-    name="Bewölkung [Okta]",
+    name="Bewölkung [%]",
     visible="legendonly",
     line=dict(color="black", dash="dot")
 ), secondary_y=True)
@@ -156,7 +313,7 @@ fig.update_layout(
     plot_bgcolor='rgba(0,0,0,0)',
     paper_bgcolor='rgba(0,0,0,0)',
 )
-fig.update_yaxes(title_text="Bewölkung [Okta]", secondary_y=True, fixedrange=True)
+fig.update_yaxes(title_text="Bewölkung [%]", secondary_y=True, fixedrange=True)
 
 st.plotly_chart(fig, use_container_width=True)
 
@@ -176,7 +333,7 @@ fig_wind.add_trace(go.Scatter(
 fig_wind.update_layout(
     title='Windstärke & Windrichtung (Traunkirchen)',
     xaxis_title='Zeit',
-    yaxis=dict(title='Windstärke (kt)', range=[0, df["wind_speed_kt"].max() * 1.2], fixedrange=True),
+    yaxis=dict(title='Windstärke (kt)', range=[0,max(10,float(df["wind_speed_kt"].max()) * 1.2)], fixedrange=True),
     yaxis2=dict(title='Windrichtung (°)', overlaying='y', side='right', range=[0, 360], showgrid=False, fixedrange=True),
     legend=dict(orientation='h', y=1.1),
     margin=dict(t=50, b=60),
