@@ -1,388 +1,362 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import date, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 # ======================
-# Hintergrund & Styling
+# Styling
 # ======================
-st.markdown(
-    """
-    <style>
-    body {
-        background-color: #FFF8E7;  /* Heller, warmer Hintergrund */
-    }
-    .css-18e3th9 {  /* Hauptbereich */
-        background-color: rgba(255, 255, 255, 0.85);
-        padding: 20px;
-        border-radius: 15px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+st.set_page_config(page_title="Traunsee Wetter", layout="wide")
 
-# ======================
-# Orte & Koordinaten
-# ======================
-coords = {
-    "Traunkirchen": (47.993, 13.745),
-    "Gmunden": (47.918, 13.799),
-    "Bad_Ischl": (47.714, 13.632),
-    "Ried": (48.198, 13.490)
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'IBM Plex Sans', sans-serif;
 }
 
-# ======================
-# Wetterdaten abrufen (robust)
-# ======================
-import logging
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'IBM Plex Mono', monospace !important;
+    letter-spacing: -0.03em;
+}
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+.stApp {
+    background: linear-gradient(160deg, #e8f4f8 0%, #f0e9d6 50%, #e8ede0 100%);
+    min-height: 100vh;
+}
+
+.block-container {
+    padding-top: 2rem;
+    max-width: 1400px;
+}
+
+.metric-card {
+    background: rgba(255,255,255,0.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 12px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.metric-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #888;
+    font-family: 'IBM Plex Mono', monospace;
+    margin-bottom: 0.2rem;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 600;
+    font-family: 'IBM Plex Mono', monospace;
+    color: #1a1a1a;
+    line-height: 1;
+}
+
+.metric-unit {
+    font-size: 0.9rem;
+    color: #666;
+    margin-left: 4px;
+}
+
+.section-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: #888;
+    border-top: 1px solid rgba(0,0,0,0.1);
+    padding-top: 1rem;
+    margin-top: 1.5rem;
+    margin-bottom: 0.8rem;
+}
+
+.stDateInput > div > div {
+    background: rgba(255,255,255,0.7) !important;
+    border-color: rgba(0,0,0,0.12) !important;
+    border-radius: 8px !important;
+}
+
+.stAlert {
+    border-radius: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ======================
+# Koordinaten
+# ======================
+COORDS = {
+    "Traunkirchen": (47.993, 13.745),
+    "Gmunden":      (47.918, 13.799),
+    "Bad_Ischl":    (47.714, 13.632),
+    "Ried":         (48.198, 13.490),
+}
+
+HOURLY_VARS = "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,wind_speed_10m,wind_direction_10m"
+
+
+# ======================
+# API-Abruf: Archiv + Forecast zusammengeführt
+# ======================
+def _get(url, params):
+    for attempt in range(3):
+        try:
+            r = requests.get(url, params=params, timeout=15)
+            r.raise_for_status()
+            return r.json()
+        except requests.exceptions.RequestException as e:
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
+
+
+def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFrame:
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    base_params = dict(latitude=lat, longitude=lon, hourly=HOURLY_VARS, timezone="Europe/Vienna")
+
+    parts = []
+
+    # Archiv-Teil
+    if start <= yesterday:
+        p = {**base_params, "start_date": start.isoformat(), "end_date": min(end, yesterday).isoformat()}
+        data = _get("https://archive-api.open-meteo.com/v1/archive", p)
+        parts.append(pd.DataFrame(data["hourly"]))
+
+    # Forecast-Teil
+    if end >= today:
+        p = {**base_params, "start_date": max(start, today).isoformat(), "end_date": end.isoformat()}
+        data = _get("https://api.open-meteo.com/v1/forecast", p)
+        parts.append(pd.DataFrame(data["hourly"]))
+
+    df = pd.concat(parts).drop_duplicates(subset="time").reset_index(drop=True)
+    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
+    df.set_index("time", inplace=True)
+    return df
+
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def fetch_openmeteo(start, end, lat, lon):
-
-    today = date.today()
-
-    if end <= today:
-        url = "https://archive-api.open-meteo.com/v1/archive"
-
-    elif start >= today:
-        url = "https://api.open-meteo.com/v1/forecast"
-
-    else:
-        raise ValueError(
-            "Gemischter Zeitraum erkannt"
-        )
-
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
-        "hourly": (
-            "pressure_msl,"
-            "cloud_cover,"
-            "cloud_cover_low,"
-            "cloud_cover_mid,"
-            "cloud_cover_high,"
-            "wind_speed_10m,"
-            "wind_direction_10m"
-        ),
-        "timezone": "Europe/Vienna"
-    }
-
-    last_exception = None
-
-    for attempt in range(3):
-
-        try:
-
-            r = requests.get(
-                url,
-                params=params,
-                timeout=20
-            )
-
-            if r.status_code != 200:
-                raise Exception(
-                    f"HTTP {r.status_code}: {r.text}"
-                )
-
-            data = r.json()
-
-            if "hourly" not in data:
-                raise Exception(
-                    f"Keine hourly-Daten erhalten: {data}"
-                )
-
-            df = pd.DataFrame(data["hourly"])
-
-            df["time"] = pd.to_datetime(df["time"])
-
-            df["time"] = df["time"].dt.tz_localize(
-                "Europe/Vienna",
-                ambiguous="infer",
-                nonexistent="shift_forward"
-            )
-
-            df.set_index("time", inplace=True)
-
-            return df
-
-        except Exception as e:
-
-            last_exception = e
-
-            logging.warning(
-                f"Open-Meteo Versuch {attempt+1}/3 fehlgeschlagen: {e}"
-            )
-
-            time.sleep(2)
-
-    raise last_exception
+def fetch_all(start: date, end: date) -> dict:
+    results = {}
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(fetch_location, start, end, lat, lon): name
+                   for name, (lat, lon) in COORDS.items()}
+        for future in as_completed(futures):
+            name = futures[future]
+            results[name] = future.result()
+    return results
 
 
-def fetch_openmeteo_mixed(start, end, lat, lon):
-
-    today = date.today()
-
-    if end <= today:
-        return fetch_openmeteo(start, end, lat, lon)
-
-    if start >= today:
-        return fetch_openmeteo(start, end, lat, lon)
-
-    archive_df = fetch_openmeteo(
-        start,
-        today,
-        lat,
-        lon
-    )
-
-    forecast_df = fetch_openmeteo(
-        today + timedelta(days=1),
-        end,
-        lat,
-        lon
-    )
-
-    return pd.concat(
-        [archive_df, forecast_df]
-    ).sort_index()
-    
 # ======================
-# UI & Datenvorbereitung
+# UI
 # ======================
-st.title("Traunsee Druckgradient")
+st.title("Traunsee — Druckgradient")
 
-# Standard-Zeitraum: Heute + 2 Tage
-default_start = date.today()
-default_end = date.today() + timedelta(days=2)
-
-start_date = st.date_input("Startdatum", default_start)
-end_date = st.date_input("Enddatum", default_end)
+col_s, col_e, _ = st.columns([1, 1, 3])
+with col_s:
+    start_date = st.date_input("Von", date.today())
+with col_e:
+    end_date = st.date_input("Bis", date.today() + timedelta(days=2))
 
 if end_date < start_date:
-    st.error("Enddatum muss nach Startdatum sein")
+    st.error("Enddatum muss nach Startdatum liegen.")
     st.stop()
 
-# Daten abrufen (parallel)
+# Daten laden
+with st.spinner("Wetterdaten werden geladen …"):
+    try:
+        dfs = fetch_all(start_date, end_date)
+    except requests.exceptions.RequestException as e:
+        st.error(f"⚠️ API-Fehler: {e}\n\nBitte Zeitraum prüfen oder später nochmal versuchen.")
+        st.stop()
 
-dfs = {}
-
-with st.spinner("Lade Wetterdaten ..."):
-
-    with ThreadPoolExecutor(max_workers=4) as executor:
-
-        futures = {
-            executor.submit(
-                fetch_openmeteo_mixed,
-                start_date,
-                end_date,
-                lat,
-                lon
-            ): name
-            for name, (lat, lon) in coords.items()
-        }
-
-        for future in as_completed(futures):
-
-            name = futures[future]
-
-            try:
-                dfs[name] = future.result()
-
-            except Exception as e:
-
-                logging.error(
-                    f"{name}: {e}"
-                )
-
-                st.warning(
-                    f"Wetterdaten für {name} konnten nicht geladen werden."
-                )
-
-required = [
-    "Traunkirchen",
-    "Gmunden",
-    "Bad_Ischl",
-    "Ried"
-]
-
-missing = [
-    x for x in required
-    if x not in dfs
-]
-
-if missing:
-
-    st.error(
-        f"Fehlende Wetterdaten: {', '.join(missing)}"
-    )
-
-    st.stop()
-
-# Druckdifferenzen & Zusatzdaten
-df = dfs["Traunkirchen"].rename(columns={"pressure_msl": "P_T"})
+# DataFrame aufbauen
+df = dfs["Traunkirchen"].copy()
+df = df.rename(columns={"pressure_msl": "P_T"})
 df["P_G"] = dfs["Gmunden"]["pressure_msl"]
 df["P_B"] = dfs["Bad_Ischl"]["pressure_msl"]
 df["P_R"] = dfs["Ried"]["pressure_msl"]
 df["delta_P_TG"] = df["P_T"] - df["P_G"]
 df["delta_P_BR"] = df["P_B"] - df["P_R"]
-df["wind_speed_kt"] = dfs["Traunkirchen"]["wind_speed_10m"] * 1.94384
-df["wind_dir"] = dfs["Traunkirchen"]["wind_direction_10m"]
+df["wind_speed_kt"] = df["wind_speed_10m"] * 1.94384
+df["wind_dir"] = df["wind_direction_10m"]
+
 
 # ======================
-# 1. ΔP & Gesamtbewölkung
+# Aktuelle Kennzahlen
 # ======================
-fig = make_subplots(specs=[[{"secondary_y": True}]])
+now = pd.Timestamp.now(tz="Europe/Vienna")
+nearest = df.index.get_indexer([now], method="nearest")[0]
+row = df.iloc[nearest]
 
-fig.add_trace(go.Scatter(
+st.markdown('<div class="section-title">Aktuelle Werte — Traunkirchen</div>', unsafe_allow_html=True)
+c1, c2, c3, c4 = st.columns(4)
+
+def metric_card(label, value, unit, color="#1a1a1a"):
+    return f"""
+    <div class="metric-card">
+        <div class="metric-label">{label}</div>
+        <div class="metric-value" style="color:{color}">{value}<span class="metric-unit">{unit}</span></div>
+    </div>"""
+
+with c1:
+    st.markdown(metric_card("ΔP Traunkirchen–Gmunden", f"{row['delta_P_TG']:.2f}", "hPa",
+        color="#e05c2a" if row['delta_P_TG'] > 1.5 else "#1a1a1a"), unsafe_allow_html=True)
+with c2:
+    st.markdown(metric_card("ΔP Bad Ischl–Ried", f"{row['delta_P_BR']:.2f}", "hPa"), unsafe_allow_html=True)
+with c3:
+    st.markdown(metric_card("Wind", f"{row['wind_speed_kt']:.1f}", "kt"), unsafe_allow_html=True)
+with c4:
+    st.markdown(metric_card("Windrichtung", f"{row['wind_dir']:.0f}", "°"), unsafe_allow_html=True)
+
+
+# ======================
+# Hilfsfunktion: "Jetzt"-Linie + Heute-Markierung
+# ======================
+def add_now_and_today(fig):
+    today_ts = pd.Timestamp.now(tz="Europe/Vienna").normalize()
+    tomorrow_ts = today_ts + pd.Timedelta(days=1)
+    now_ts = pd.Timestamp.now(tz="Europe/Vienna")
+
+    fig.add_vrect(x0=today_ts, x1=tomorrow_ts,
+                  fillcolor="#FFE57F", opacity=0.18, layer="below", line_width=0)
+
+    if df.index.min() <= now_ts <= df.index.max():
+        fig.add_shape(type="line", x0=now_ts, x1=now_ts, y0=0, y1=1,
+                      line=dict(color="darkorange", width=2, dash="dot"),
+                      xref="x", yref="paper")
+        fig.add_annotation(x=now_ts, y=0.97, text="Jetzt", showarrow=False,
+                           xanchor="left", xref="x", yref="paper",
+                           font=dict(color="darkorange", size=11))
+    return fig
+
+
+# ======================
+# Chart 1 — Druckgradient
+# ======================
+st.markdown('<div class="section-title">Druckgradient</div>', unsafe_allow_html=True)
+
+fig1 = make_subplots(specs=[[{"secondary_y": True}]])
+
+fig1.add_trace(go.Scatter(
     x=df.index, y=df["delta_P_TG"],
     name="ΔP Traunkirchen–Gmunden",
-    line=dict(color="grey", width=2)
+    line=dict(color="#555", width=2.5)
 ), secondary_y=False)
 
-fig.add_trace(go.Scatter(
+fig1.add_trace(go.Scatter(
     x=df.index, y=df["delta_P_BR"],
     name="ΔP Bad Ischl–Ried",
-    line=dict(color="deepskyblue", width=2)
+    line=dict(color="#1a9de0", width=2.5)
 ), secondary_y=False)
 
-fig.add_trace(go.Scatter(
+fig1.add_trace(go.Scatter(
     x=df.index, y=df["cloud_cover"],
-    name="Bewölkung [%]",
+    name="Gesamtbewölkung (%)",
     visible="legendonly",
-    line=dict(color="black", dash="dot")
+    line=dict(color="#aaa", dash="dot", width=1.5)
 ), secondary_y=True)
 
-# --- Markierung heutiger Tag ---
-today = pd.Timestamp.now(tz="Europe/Vienna").normalize()
-tomorrow = today + pd.Timedelta(days=1)
-fig.add_vrect(
-    x0=today, x1=tomorrow,
-    fillcolor="#FFE57F", opacity=0.2,  # Helles Gelb für Sonne
-    layer="below", line_width=0
-)
+fig1 = add_now_and_today(fig1)
 
-# --- Linie für "Jetzt" ---
-now = pd.Timestamp.now(tz="Europe/Vienna")
-if df.index.min() <= now <= df.index.max():
-    fig.add_shape(
-        type="line", x0=now, x1=now, y0=0, y1=1,
-        line=dict(color="orange", width=3, dash="dot"),
-        xref="x", yref="paper"
-    )
-    fig.add_annotation(
-        x=now, y=1, text="Jetzt", showarrow=False,
-        xanchor="left", xref="x", yref="paper",
-        font=dict(color="orange")
-    )
+fig1.add_hline(y=1.5, line=dict(color="crimson", dash="dash", width=1.5),
+               annotation_text="Oberwind Süd (1.5 hPa)", annotation_position="top right",
+               annotation_font_color="crimson")
+fig1.add_hline(y=0, line=dict(color="#333", dash="dot", width=1))
 
-# --- Horizontale Linie bei 1.5 hPa ---
-fig.add_hline(
-    y=1.5,
-    line=dict(color="red", dash="dash"),
-    annotation_text="Oberwind Süd",
-    annotation_position="top right"
-)
-
-# --- Horizontale Linie bei 0 hPa ---
-fig.add_hline(
-    y=0,
-    line=dict(color="black", dash="dot")
-)
-
-# --- Layout ---
-fig.update_layout(
-    title="Druckdifferenz und Gesamtbewölkung",
-    xaxis_title="Datum",
-    yaxis_title="ΔP [hPa]",
-    legend=dict(orientation="h", y=-0.25),
-    margin=dict(t=50, b=60),
+fig1.update_layout(
+    xaxis_title="Zeit", yaxis_title="ΔP [hPa]",
+    legend=dict(orientation="h", y=-0.2),
+    margin=dict(t=20, b=50),
     dragmode="zoom",
-    plot_bgcolor='rgba(0,0,0,0)',
-    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor="rgba(255,255,255,0.5)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="IBM Plex Sans"),
+    height=380,
 )
-fig.update_yaxes(title_text="Bewölkung [%]", secondary_y=True, fixedrange=True)
+fig1.update_yaxes(title_text="Bewölkung [%]", secondary_y=True, fixedrange=True, range=[0, 100])
+fig1.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
+fig1.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)", secondary_y=False)
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig1, use_container_width=True)
+
 
 # ======================
-# 3. Winddiagramm
+# Chart 2 — Wind
 # ======================
-fig_wind = go.Figure()
+st.markdown('<div class="section-title">Wind — Traunkirchen</div>', unsafe_allow_html=True)
 
-fig_wind.add_trace(go.Scatter(
-    x=df.index, y=df["wind_speed_kt"], mode='lines+markers',
-    name='Windstärke (kt)', line=dict(color='orange'), yaxis='y1'))
+fig2 = go.Figure()
 
-fig_wind.add_trace(go.Scatter(
-    x=df.index, y=df["wind_dir"], mode='lines',
-    name='Windrichtung (°)', line=dict(color='green', dash='dot'), yaxis='y2'))
+fig2.add_trace(go.Scatter(
+    x=df.index, y=df["wind_speed_kt"],
+    name="Windstärke (kt)",
+    line=dict(color="#e07a2a", width=2.5),
+    fill="tozeroy", fillcolor="rgba(224,122,42,0.08)"
+))
 
-fig_wind.update_layout(
-    title='Windstärke & Windrichtung (Traunkirchen)',
-    xaxis_title='Zeit',
-    yaxis=dict(title='Windstärke (kt)', range=[0,max(10,float(df["wind_speed_kt"].max()) * 1.2)], fixedrange=True),
-    yaxis2=dict(title='Windrichtung (°)', overlaying='y', side='right', range=[0, 360], showgrid=False, fixedrange=True),
-    legend=dict(orientation='h', y=1.1),
-    margin=dict(t=50, b=60),
-    dragmode="zoom"
+fig2.add_trace(go.Scatter(
+    x=df.index, y=df["wind_dir"],
+    name="Windrichtung (°)",
+    line=dict(color="#2e9e5b", dash="dot", width=1.5),
+    yaxis="y2"
+))
+
+fig2 = add_now_and_today(fig2)
+
+max_kt = df["wind_speed_kt"].max()
+fig2.update_layout(
+    xaxis_title="Zeit",
+    yaxis=dict(title="Windstärke (kt)", range=[0, max(max_kt * 1.2, 5)], fixedrange=True,
+               showgrid=True, gridcolor="rgba(0,0,0,0.05)"),
+    yaxis2=dict(title="Windrichtung (°)", overlaying="y", side="right",
+                range=[0, 360], showgrid=False, fixedrange=True),
+    legend=dict(orientation="h", y=-0.2),
+    margin=dict(t=20, b=50),
+    dragmode="zoom",
+    plot_bgcolor="rgba(255,255,255,0.5)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="IBM Plex Sans"),
+    height=320,
 )
-st.plotly_chart(fig_wind, use_container_width=True)
+
+st.plotly_chart(fig2, use_container_width=True)
+
 
 # ======================
-# 3. AROME Slider (Karussell)
+# AROME Bilder (scrollbar)
 # ======================
-# --- AROME Slider Bilderliste ---
-arome_images = [f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png" for i in range(1, 43)]
-st.markdown("###### AROME (von kitewetter.at)")
+st.markdown('<div class="section-title">AROME — kitewetter.at</div>', unsafe_allow_html=True)
 
-# HTML für horizontal scrollbaren Bereich
-scrollable_html = "<div style='display:flex; overflow-x:auto; gap:10px; padding:10px;'>"
-for img_url in arome_images:
-    scrollable_html += f"<img src='{img_url}' style='height:300px;'>"
-scrollable_html += "</div>"
+arome_images = [
+    f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png"
+    for i in range(1, 43)
+]
 
-st.markdown(scrollable_html, unsafe_allow_html=True)
+html_scroll = """
+<div style="display:flex; overflow-x:auto; gap:10px; padding:10px 0 16px 0;
+            scrollbar-width:thin; scrollbar-color:#ccc transparent;">
+"""
+for url in arome_images:
+    html_scroll += f'<img src="{url}" style="height:280px; border-radius:8px; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,0.1);">'
+html_scroll += "</div>"
+
+st.markdown(html_scroll, unsafe_allow_html=True)
+
 
 # ======================
-# 2. Profiwetter Bild
+# Profiwetter
 # ======================
-st.markdown("###### profiwetter.ch - Traunkirchen")
-st.image("https://profiwetter.ch/mos_P0062.svg?t=1756145032", caption="Profiwetter MOS", use_container_width=True)
-
-
-# # ======================
-# # 2. Wolken-Schichtplot
-# # ======================
-# fig_clouds = go.Figure()
-# for col, name, color in [
-#     ("cloud_cover_low", "Wolken unten", "lightblue"),
-#     ("cloud_cover_mid", "Wolken Mitte", "deepskyblue"),
-#     ("cloud_cover_high", "Wolken oben", "dodgerblue")
-# ]:
-#     fig_clouds.add_trace(go.Scatter(x=df.index, y=df[col], mode='lines', name=name, stackgroup='cloud', line=dict(width=0.5, color=color)))
-
-# fig_clouds.update_layout(
-#     title='Wolkenbedeckung (Traunkirchen)',
-#     xaxis_title='Zeit',
-#     yaxis_title='Wolkenbedeckung (Anteil)',
-#     yaxis=dict(range=[0, 4], fixedrange=True),
-#     legend=dict(orientation='h', y=1.1),
-#     margin=dict(t=50, b=60),
-#     dragmode="zoom"
-# )
-# st.plotly_chart(fig_clouds, use_container_width=True)
-
-
+st.markdown('<div class="section-title">Profiwetter.ch — Traunkirchen</div>', unsafe_allow_html=True)
+ts = int(time.time())
+st.image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=True)
