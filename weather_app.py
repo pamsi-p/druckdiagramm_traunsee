@@ -370,7 +370,7 @@ st.image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=Tru
 # Webcam
 # — immer anzeigen, unabhängig vom API-Status
 # ======================
-st.markdown('<div class="section-title">Webcam — Traunsee</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Webcam — Traunkirchen (SCT)</div>', unsafe_allow_html=True)
 st.components.v1.iframe(
     "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
     height=500,
