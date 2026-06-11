@@ -198,7 +198,7 @@ if dfs is not None:
     df["P_R"] = dfs["Ried"]["pressure_msl"]
     df["delta_P_TG"] = df["P_T"] - df["P_G"]
     df["delta_P_BR"] = df["P_B"] - df["P_R"]
-    df["wind_speed_kt"] = df["wind_speed_10m"]
+    df["wind_speed_kt"] = df["wind_speed_10m"] / 1,852
     df["wind_dir"] = df["wind_direction_10m"]
 
     # ======================
