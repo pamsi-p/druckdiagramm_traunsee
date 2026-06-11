@@ -293,9 +293,9 @@ if dfs is not None:
     )
     fig1.update_yaxes(title_text="Bewölkung [%]", secondary_y=True, fixedrange=True, range=[0, 100])
     fig1.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
-    fig1.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)", secondary_y=False)
+    fig1.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)",  fixedrange=True, secondary_y=False)
 
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
 
     # ======================
     # Chart 2 — Wind
