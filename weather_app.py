@@ -103,6 +103,13 @@ COORDS = {
 
 HOURLY_VARS = "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,wind_speed_10m,wind_direction_10m"
 
+# Plotly-Konfiguration: touch-freundlich, Toolbar ausgeblendet
+PLOTLY_CONFIG = {
+    "scrollZoom": False,
+    "displayModeBar": False,   # Toolbar komplett ausblenden (zu klein auf Mobile)
+    "doubleClick": "reset",
+    "responsive": True,
+}
 
 # ======================
 # API-Abruf: Archiv + Forecast zusammengeführt
