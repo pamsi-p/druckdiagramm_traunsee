@@ -129,7 +129,7 @@ def _get(url, params):
 def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFrame:
     today = date.today()
     yesterday = today - timedelta(days=1)
-    base_params = dict(latitude=lat, longitude=lon, hourly=HOURLY_VARS, timezone="Europe/Vienna")
+    base_params = dict(latitude=lat, longitude=lon, hourly=HOURLY_VARS, timezone="Europe/Vienna", wind_speed_unit="kn")
 
     parts = []
 
@@ -198,7 +198,7 @@ if dfs is not None:
     df["P_R"] = dfs["Ried"]["pressure_msl"]
     df["delta_P_TG"] = df["P_T"] - df["P_G"]
     df["delta_P_BR"] = df["P_B"] - df["P_R"]
-    df["wind_speed_kt"] = df["wind_speed_10m"] / 1.852
+    df["wind_speed_kt"] = df["wind_speed_10m"]
     df["wind_dir"] = df["wind_direction_10m"]
 
     # ======================
