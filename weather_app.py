@@ -301,14 +301,14 @@ if dfs is not None:
         x=df.index, y=df["wind_speed_kt"],
         name="Windstärke (kt)",
         line=dict(color="#e07a2a", width=2.5),
-        fill="tozeroy", fillcolor="rgba(224,122,42,0.08)"
+        fill="tozeroy", fillcolor="rgba(224,122,42,0.08)",
+        yaxis="y2"
     ))
 
     fig2.add_trace(go.Scatter(
         x=df.index, y=df["wind_dir"],
         name="Windrichtung (°)",
-        line=dict(color="#2e9e5b", dash="dot", width=1.5),
-        yaxis="y2"
+        line=dict(color="#2e9e5b", dash="dot", width=1.5)
     ))
 
     fig2 = add_now_and_today(fig2)
@@ -316,9 +316,9 @@ if dfs is not None:
     max_kt = df["wind_speed_kt"].max()
     fig2.update_layout(
         xaxis_title="Zeit",
-        yaxis2=dict(title="Windstärke (kt)", range=[0, max(max_kt * 1.2, 5)], fixedrange=True,
+        yaxis=dict(title="Windstärke (kt)", range=[0, max(max_kt * 1.2, 5)], fixedrange=True,
                    showgrid=True, gridcolor="rgba(0,0,0,0.05)"),
-        yaxis=dict(title="Windrichtung (°)", overlaying="y", side="right",
+        yaxis2=dict(title="Windrichtung (°)", overlaying="y", side="right",
                     range=[0, 360], showgrid=False, fixedrange=True),
         legend=dict(orientation="h", y=-0.2),
         margin=dict(t=20, b=50),
