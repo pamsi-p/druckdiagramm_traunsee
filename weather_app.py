@@ -308,7 +308,7 @@ if dfs is not None:
         x=df.index, y=df["wind_dir"],
         name="Windrichtung (°)",
         line=dict(color="#2e9e5b", dash="dot", width=1.5),
-        yaxis="y1"
+        yaxis="y2"
     ))
 
     fig2 = add_now_and_today(fig2)
