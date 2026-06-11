@@ -191,7 +191,7 @@ if dfs is not None:
     df["P_R"] = dfs["Ried"]["pressure_msl"]
     df["delta_P_TG"] = df["P_T"] - df["P_G"]
     df["delta_P_BR"] = df["P_B"] - df["P_R"]
-    df["wind_speed_kt"] = df["wind_speed_10m"] * 1.94384
+    df["wind_speed_kt"] = df["wind_speed_10m"]
     df["wind_dir"] = df["wind_direction_10m"]
 
     # ======================
@@ -308,7 +308,7 @@ if dfs is not None:
         x=df.index, y=df["wind_dir"],
         name="Windrichtung (°)",
         line=dict(color="#2e9e5b", dash="dot", width=1.5),
-        yaxis="y2"
+        yaxis="y1"
     ))
 
     fig2 = add_now_and_today(fig2)
@@ -316,9 +316,9 @@ if dfs is not None:
     max_kt = df["wind_speed_kt"].max()
     fig2.update_layout(
         xaxis_title="Zeit",
-        yaxis=dict(title="Windstärke (kt)", range=[0, max(max_kt * 1.2, 5)], fixedrange=True,
+        yaxis2=dict(title="Windstärke (kt)", range=[0, max(max_kt * 1.2, 5)], fixedrange=True,
                    showgrid=True, gridcolor="rgba(0,0,0,0.05)"),
-        yaxis2=dict(title="Windrichtung (°)", overlaying="y", side="right",
+        yaxis=dict(title="Windrichtung (°)", overlaying="y", side="right",
                     range=[0, 360], showgrid=False, fixedrange=True),
         legend=dict(orientation="h", y=-0.2),
         margin=dict(t=20, b=50),
