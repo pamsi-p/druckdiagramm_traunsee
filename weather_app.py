@@ -364,3 +364,15 @@ st.markdown(html_scroll, unsafe_allow_html=True)
 st.markdown('<div class="section-title">Profiwetter.ch — Traunkirchen</div>', unsafe_allow_html=True)
 ts = int(time.time())
 st.image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=True)
+
+
+# ======================
+# Webcam
+# — immer anzeigen, unabhängig vom API-Status
+# ======================
+st.markdown('<div class="section-title">Webcam — Traunsee</div>', unsafe_allow_html=True)
+st.components.v1.iframe(
+    "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
+    height=500,
+    scrolling=False,
+)
