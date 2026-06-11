@@ -8,7 +8,7 @@ import time
 
 # ======================
 # Styling
-# ======================
+# ====================== 
 st.set_page_config(page_title="Traunsee Wetter", layout="wide")
 
 st.markdown("""
