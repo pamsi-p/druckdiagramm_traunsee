@@ -8,7 +8,7 @@ import time
 
 # ======================
 # Styling
-# ====================== 
+# ======================
 st.set_page_config(page_title="Traunsee Wetter", layout="wide")
 
 st.markdown("""
@@ -34,6 +34,7 @@ h1, h2, h3, h4, h5, h6 {
     max-width: 1400px;
 }
 
+/* ── Metrikkarten ── */
 .metric-card {
     background: rgba(255,255,255,0.75);
     backdrop-filter: blur(12px);
@@ -66,6 +67,14 @@ h1, h2, h3, h4, h5, h6 {
     margin-left: 4px;
 }
 
+/* ── 2×2 Grid für Metriken auf Mobile ── */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
 .section-title {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.75rem;
@@ -78,6 +87,7 @@ h1, h2, h3, h4, h5, h6 {
     margin-bottom: 0.8rem;
 }
 
+/* ── Datepicker ── */
 .stDateInput > div > div {
     background: rgba(255,255,255,0.7) !important;
     border-color: rgba(0,0,0,0.12) !important;
@@ -86,6 +96,51 @@ h1, h2, h3, h4, h5, h6 {
 
 .stAlert {
     border-radius: 10px;
+}
+
+/* ══════════════════════════════
+   MOBILE  (≤ 640 px)
+   ══════════════════════════════ */
+@media (max-width: 640px) {
+
+    /* Seitentitel kleiner */
+    h1 { font-size: 1.3rem !important; }
+
+    /* Weniger Innenabstand */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+    }
+
+    /* Metrikkarten: größere Werte, kompakteres Padding */
+    .metric-card {
+        padding: 0.9rem 1rem;
+        border-radius: 10px;
+    }
+
+    .metric-value {
+        font-size: 1.6rem;
+    }
+
+    .metric-label {
+        font-size: 0.62rem;
+    }
+
+    /* Datepicker: nebeneinander mit etwas weniger Gap */
+    .stDateInput {
+        min-width: 0 !important;
+    }
+
+    /* AROME-Bilder etwas kleiner für Mobile */
+    .arome-scroll img {
+        height: 200px !important;
+    }
+
+    /* Webcam-iframe auf Mobile etwas niedriger */
+    .webcam-wrap iframe {
+        height: 240px !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -111,6 +166,7 @@ PLOTLY_CONFIG = {
     "responsive": True,
 }
 
+
 # ======================
 # API-Abruf: Archiv + Forecast zusammengeführt
 # ======================
@@ -119,7 +175,7 @@ def _get(url, params):
     for attempt in range(5):
         r = requests.get(url, params=params, timeout=20)
         if r.status_code == 429:
-            time.sleep(10 * (attempt + 1))   # 10s, 20s, 30s, 40s, 50s
+            time.sleep(10 * (attempt + 1))
             continue
         r.raise_for_status()
         return r.json()
@@ -133,13 +189,11 @@ def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFra
 
     parts = []
 
-    # Archiv-Teil
     if start <= yesterday:
         p = {**base_params, "start_date": start.isoformat(), "end_date": min(end, yesterday).isoformat()}
         data = _get("https://archive-api.open-meteo.com/v1/archive", p)
         parts.append(pd.DataFrame(data["hourly"]))
 
-    # Forecast-Teil
     if end >= today:
         p = {**base_params, "start_date": max(start, today).isoformat(), "end_date": end.isoformat()}
         data = _get("https://api.open-meteo.com/v1/forecast", p)
@@ -166,6 +220,7 @@ def fetch_all(start: date, end: date) -> dict:
 # ======================
 st.title("Traunsee — Druckgradient")
 
+# Datepicker: auf Mobile 2 gleich breite Spalten, auf Desktop wie bisher
 col_s, col_e, _ = st.columns([1, 1, 3])
 with col_s:
     start_date = st.date_input("Von", date.today())
@@ -186,7 +241,7 @@ with st.spinner("Wetterdaten werden geladen …"):
 
 
 # ======================
-# Datenabhängige Sektionen (nur wenn API erfolgreich)
+# Datenabhängige Sektionen
 # ======================
 if dfs is not None:
 
@@ -198,18 +253,17 @@ if dfs is not None:
     df["P_R"] = dfs["Ried"]["pressure_msl"]
     df["delta_P_TG"] = df["P_T"] - df["P_G"]
     df["delta_P_BR"] = df["P_B"] - df["P_R"]
-    df["wind_speed_kt"] = (df["wind_speed_10m"] / 1.852).round(2)
+    df["wind_speed_kt"] = df["wind_speed_10m"] * 1.94384
     df["wind_dir"] = df["wind_direction_10m"]
 
     # ======================
-    # Aktuelle Kennzahlen
+    # Aktuelle Kennzahlen — 2×2 Grid via HTML (funktioniert auf Mobile + Desktop)
     # ======================
     now = pd.Timestamp.now(tz="Europe/Vienna")
     nearest = df.index.get_indexer([now], method="nearest")[0]
     row = df.iloc[nearest]
 
     st.markdown('<div class="section-title">Aktuelle Werte — Traunkirchen</div>', unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4)
 
     def metric_card(label, value, unit, color="#1a1a1a"):
         return f"""
@@ -218,15 +272,16 @@ if dfs is not None:
             <div class="metric-value" style="color:{color}">{value}<span class="metric-unit">{unit}</span></div>
         </div>"""
 
-    with c1:
-        st.markdown(metric_card("ΔP Traunkirchen–Gmunden", f"{row['delta_P_TG']:.2f}", "hPa",
-            color="#e05c2a" if row['delta_P_TG'] > 1.5 else "#1a1a1a"), unsafe_allow_html=True)
-    with c2:
-        st.markdown(metric_card("ΔP Bad Ischl–Ried", f"{row['delta_P_BR']:.2f}", "hPa"), unsafe_allow_html=True)
-    with c3:
-        st.markdown(metric_card("Wind", f"{row['wind_speed_kt']:.1f}", "kt"), unsafe_allow_html=True)
-    with c4:
-        st.markdown(metric_card("Windrichtung", f"{row['wind_dir']:.0f}", "°"), unsafe_allow_html=True)
+    dp_color = "#e05c2a" if row['delta_P_TG'] > 1.5 else "#1a1a1a"
+
+    st.markdown(f"""
+    <div class="metrics-grid">
+        {metric_card("ΔP Traunkirchen–Gmunden", f"{row['delta_P_TG']:.2f}", "hPa", color=dp_color)}
+        {metric_card("ΔP Bad Ischl–Ried", f"{row['delta_P_BR']:.2f}", "hPa")}
+        {metric_card("Wind", f"{row['wind_speed_kt']:.1f}", "kt")}
+        {metric_card("Windrichtung", f"{row['wind_dir']:.0f}", "°")}
+    </div>
+    """, unsafe_allow_html=True)
 
     # ======================
     # Hilfsfunktion: "Jetzt"-Linie + Heute-Markierung
@@ -249,51 +304,103 @@ if dfs is not None:
         return fig
 
     # ======================
-    # Chart 1 — Druckgradient
+    # Chart 1 — Wolken-Heatmap + Druckgradient
     # ======================
-    st.markdown('<div class="section-title">Druckgradient</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Druckgradient & Bewölkung</div>', unsafe_allow_html=True)
 
-    fig1 = make_subplots(specs=[[{"secondary_y": True}]])
+    times = df.index.tolist()
 
+    fig1 = make_subplots(
+        rows=2, cols=1,
+        row_heights=[0.22, 0.78],
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+    )
+
+    # — Heatmap H/M/L (oben) —
+    fig1.add_trace(go.Heatmap(
+        x=times,
+        y=["L", "M", "H"],
+        z=[
+            df["cloud_cover_low"].fillna(0).values,
+            df["cloud_cover_mid"].fillna(0).values,
+            df["cloud_cover_high"].fillna(0).values,
+        ],
+        colorscale=[
+            [0.0, "rgba(240,244,248,1)"],
+            [0.3, "rgba(180,200,215,1)"],
+            [0.6, "rgba(110,140,160,1)"],
+            [1.0, "rgba(30,50,65,1)"],
+        ],
+        zmin=0, zmax=100,
+        showscale=True,
+        colorbar=dict(
+            title=dict(text="Clouds (%)", side="right"),
+            thickness=10,
+            len=0.22,
+            y=0.92,
+            yanchor="top",
+            tickfont=dict(size=9),
+            titlefont=dict(size=9),
+        ),
+        hovertemplate="%{y}: %{z:.0f}%<extra></extra>",
+    ), row=1, col=1)
+
+    # — Druckgradient (unten) —
     fig1.add_trace(go.Scatter(
-        x=df.index, y=df["delta_P_TG"],
-        name="ΔP Traunkirchen–Gmunden",
+        x=times, y=df["delta_P_TG"],
+        name="ΔP TK–Gmunden",
         line=dict(color="#555", width=2.5)
-    ), secondary_y=False)
+    ), row=2, col=1)
 
     fig1.add_trace(go.Scatter(
-        x=df.index, y=df["delta_P_BR"],
-        name="ΔP Bad Ischl–Ried",
+        x=times, y=df["delta_P_BR"],
+        name="ΔP Ischl–Ried",
         line=dict(color="#1a9de0", width=2.5)
-    ), secondary_y=False)
+    ), row=2, col=1)
 
-    fig1.add_trace(go.Scatter(
-        x=df.index, y=df["cloud_cover"],
-        name="Gesamtbewölkung (%)",
-        visible="legendonly",
-        line=dict(color="#aaa", dash="dot", width=1.5)
-    ), secondary_y=True)
+    # Jetzt-Linie + Heute-Markierung
+    today_ts = pd.Timestamp.now(tz="Europe/Vienna").normalize()
+    tomorrow_ts = today_ts + pd.Timedelta(days=1)
+    now_ts = pd.Timestamp.now(tz="Europe/Vienna")
 
-    fig1 = add_now_and_today(fig1)
+    for row_n in [1, 2]:
+        fig1.add_vrect(x0=today_ts, x1=tomorrow_ts,
+                       fillcolor="#FFE57F", opacity=0.18, layer="below", line_width=0,
+                       row=row_n, col=1)
+
+    if df.index.min() <= now_ts <= df.index.max():
+        fig1.add_vline(x=now_ts.timestamp() * 1000,
+                       line=dict(color="darkorange", width=2, dash="dot"))
+        fig1.add_annotation(x=now_ts, y=1.0, text="Jetzt", showarrow=False,
+                            xanchor="left", xref="x2", yref="paper",
+                            font=dict(color="darkorange", size=11))
 
     fig1.add_hline(y=1.5, line=dict(color="crimson", dash="dash", width=1.5),
-                   annotation_text="Oberwind Süd (1.5 hPa)", annotation_position="top right",
-                   annotation_font_color="crimson")
-    fig1.add_hline(y=0, line=dict(color="#333", dash="dot", width=1))
+                   annotation_text="Oberwind Süd", annotation_position="top right",
+                   annotation_font_color="crimson", row=2, col=1)
+    fig1.add_hline(y=0, line=dict(color="#333", dash="dot", width=1), row=2, col=1)
 
     fig1.update_layout(
-        xaxis_title="Zeit", yaxis_title="ΔP [hPa]",
-        legend=dict(orientation="h", y=-0.2),
-        margin=dict(t=20, b=50),
+        legend=dict(orientation="h", y=-0.12, font=dict(size=11)),
+        margin=dict(t=10, b=50, l=50, r=80),
         dragmode="zoom",
         plot_bgcolor="rgba(255,255,255,0.5)",
         paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="IBM Plex Sans"),
-        height=380,
+        font=dict(family="IBM Plex Sans", size=12),
+        height=460,
     )
-    fig1.update_yaxes(title_text="Bewölkung [%]", secondary_y=True, fixedrange=True, range=[0, 100])
+    fig1.update_yaxes(
+        tickvals=["L", "M", "H"], ticktext=["L", "M", "H"],
+        fixedrange=True, tickfont=dict(size=10),
+        row=1, col=1,
+    )
+    fig1.update_yaxes(
+        title_text="ΔP [hPa]", fixedrange=True,
+        showgrid=True, gridcolor="rgba(0,0,0,0.05)",
+        row=2, col=1,
+    )
     fig1.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
-    fig1.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)",  fixedrange=True, secondary_y=False)
 
     st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
 
@@ -313,7 +420,7 @@ if dfs is not None:
 
     fig2.add_trace(go.Scatter(
         x=df.index, y=df["wind_dir"],
-        name="Windrichtung (°)",
+        name="Richtung (°)",
         line=dict(color="#2e9e5b", dash="dot", width=1.5),
         yaxis="y2"
     ))
@@ -322,21 +429,33 @@ if dfs is not None:
 
     max_kt = df["wind_speed_kt"].max()
     fig2.update_layout(
-        xaxis_title="Zeit",
-        yaxis=dict(title="Windstärke (kt)", range=[0, max(max_kt * 1.2, 5)], fixedrange=True,
-                   showgrid=True, gridcolor="rgba(0,0,0,0.05)"),
-        yaxis2=dict(title="Windrichtung (°)", overlaying="y", side="right",
-                    range=[0, 360], showgrid=False, fixedrange=True),
-        legend=dict(orientation="h", y=-0.2),
-        margin=dict(t=20, b=50),
+        xaxis_title="",
+        yaxis=dict(
+            title="kt",
+            range=[0, max(max_kt * 1.2, 5)],
+            fixedrange=True,
+            showgrid=True,
+            gridcolor="rgba(0,0,0,0.05)",
+        ),
+        yaxis2=dict(
+            title="°",
+            overlaying="y", side="right",
+            range=[0, 360], showgrid=False, fixedrange=True,
+        ),
+        legend=dict(
+            orientation="h",
+            y=-0.22,
+            font=dict(size=11),
+        ),
+        margin=dict(t=20, b=60, l=50, r=50),
         dragmode="zoom",
         plot_bgcolor="rgba(255,255,255,0.5)",
         paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="IBM Plex Sans"),
-        height=320,
+        font=dict(family="IBM Plex Sans", size=12),
+        height=300,
     )
 
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
 
 else:
     st.info("Druckgradient und Wind sind nicht verfügbar — die Diagramme werden angezeigt, sobald die API wieder erreichbar ist.")
@@ -353,12 +472,17 @@ arome_images = [
     for i in range(1, 43)
 ]
 
+# Bilderhöhe: 200px auf Mobile (via CSS .arome-scroll img), 280px als Standard
 html_scroll = """
-<div style="display:flex; overflow-x:auto; gap:10px; padding:10px 0 16px 0;
-            scrollbar-width:thin; scrollbar-color:#ccc transparent;">
+<div class="arome-scroll" style="display:flex; overflow-x:auto; gap:10px;
+     padding:10px 0 16px 0; scrollbar-width:thin; scrollbar-color:#ccc transparent;
+     -webkit-overflow-scrolling:touch;">
 """
 for url in arome_images:
-    html_scroll += f'<img src="{url}" style="height:280px; border-radius:8px; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,0.1);">'
+    html_scroll += (
+        f'<img src="{url}" style="height:280px; border-radius:8px; '
+        f'flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,0.1);">'
+    )
 html_scroll += "</div>"
 
 st.markdown(html_scroll, unsafe_allow_html=True)
@@ -377,9 +501,9 @@ st.image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=Tru
 # Webcam
 # — immer anzeigen, unabhängig vom API-Status
 # ======================
-st.markdown('<div class="section-title">Webcam — Traunkirchen (SCT)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Webcam — Traunkirchen</div>', unsafe_allow_html=True)
 st.components.v1.iframe(
     "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
-    height=500,
+    height=480,
     scrolling=False,
 )
