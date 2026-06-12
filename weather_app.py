@@ -335,6 +335,8 @@ if dfs is not None:
         font=dict(family="IBM Plex Sans"),
         height=320,
     )
+    fig2.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
+    fig2.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)",  fixedrange=True, secondary_y=False)
 
     st.plotly_chart(fig2, use_container_width=True)
 
