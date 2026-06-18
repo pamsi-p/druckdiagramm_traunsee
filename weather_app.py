@@ -342,7 +342,8 @@ body { background: transparent; font-family: 'IBM Plex Sans', Arial, sans-serif;
 .addon { font-size: 11px; text-align: left; padding: 4px 8px; color: #555; font-family: monospace; }
 .trend-row { font-size: 11px; display: flex; gap: 6px; justify-content: center; padding: 4px 0; font-family: monospace; color: #555; flex-wrap: wrap; }
 select { background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; padding: 2px 6px; font-size: 11px; margin: 4px 0; }
-@media (max-width: 600px) { .row { flex-direction: column; } }
+@media (max-width: 1000px) { .row { flex-direction: column; } }
+
 </style>
 <script src="https://cdn.plot.ly/plotly-3.0.0.min.js"></script>
 </head>
@@ -359,8 +360,9 @@ select { background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.12); 
     </div>
     <select id="wind_unit" onchange="updateUnit()">
       <option value="1">m/s</option>
-      <option value="1.944">kn</option>
+      <option value="1.944" selected>kn</option>
       <option value="3.6">km/h</option>
+
     </select>
   </div>
   <div class="cell">
@@ -493,7 +495,7 @@ updateUnit();
 </html>"""
     )
 
-    st.components.v1.html(boje_html, height=380, scrolling=False)
+    st.components.v1.html(boje_html, height=900, scrolling=False)
 
 except Exception as e:
     st.warning(f"⚠️ Klimaboje nicht erreichbar: {e}")
