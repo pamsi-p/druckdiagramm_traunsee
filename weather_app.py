@@ -6,6 +6,8 @@ from plotly.subplots import make_subplots
 from datetime import date, timedelta, datetime
 import time
 import json
+import requests
+import re
 
 
 # ======================
@@ -640,23 +642,15 @@ st.image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=Tru
 # ======================
 # Webcam
 # ======================
-def get_uyc_webcam():
-    now = datetime.now()
+def get_uyc_cam():
+    html = requests.get("https://www.uyct.at/wetter.html", timeout=10).text
 
-    # 1. versuche HTML scraping
-    try:
-        url = "https://www.uyct.at/wetter.html"
-        html = requests.get(url, timeout=10).text
-        match = re.search(r'(https://www\.uyct\.at/webcam/.+?\.jpg)', html)
-        if match:
-            return match.group(1)
-    except:
-        pass
+    match = re.search(r'(https://www\.uyct\.at/webcam/\d{4}/\d{2}/\d{2}/[^"]+\.jpg)', html)
 
-    # 2. fallback (latest guess)
-    date_part = now.strftime("%Y/%m/%d")
-    ts = now.strftime("%Y%m%d%H%M%S")
-    return f"https://www.uyct.at/webcam/{date_part}/UNION%20YACHT%20CLUB%20Traunsee_01_{ts}.jpg"
+    if match:
+        return match.group(1)
+
+    return None
     
 st.markdown('<div class="section-title">Webcam — Traunkirchen (SCT)</div>', unsafe_allow_html=True)
 st.components.v1.iframe(
@@ -670,8 +664,8 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-cam = get_uyc_webcam()
-
+cam = get_uyc_cam()
+st.write("DEBUG URL:", cam)
 st.image(
     cam,
     use_container_width=True
