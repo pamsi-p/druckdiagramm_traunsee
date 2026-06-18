@@ -652,6 +652,14 @@ def get_uyc_cam():
 
     return None
 
+
+st.markdown('<div class="section-title">Webcam — Traunkirchen (SCT)</div>', unsafe_allow_html=True)
+st.components.v1.iframe(
+    "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
+    height=500,
+    scrolling=False,
+)
+
 def panomax_url(dt):
     return "https://traunkirchen.panomax.com/panorama/current.jpg" #"https://traunkirchen.panomax.com/panorama/?t=" + dt.strftime("%Y-%m-%d+%H-%M-%S")
 st.markdown('<div class="section-title">Webcam - Traunkirchen (Panomax)</div>', unsafe_allow_html=True)
@@ -661,15 +669,6 @@ st.components.v1.iframe(
     url,
     height=600
 )
-
-st.markdown('<div class="section-title">Webcam — Traunkirchen (SCT)</div>', unsafe_allow_html=True)
-st.components.v1.iframe(
-    "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
-    height=500,
-    scrolling=False,
-)
-
-
 
 st.markdown(
     '<div class="section-title">Webcam — Gmunden (UYC)</div>',
@@ -692,3 +691,14 @@ st.image(
     "https://www.salzi.at/webcam/INTERVAL_FTP/rathausplatz.jpg",
     use_container_width=True
 )
+
+def panomax_url_gm(dt):
+    return "https://traunsee.panomax.com/gmundnerberg/current.jpeg" #"https://traunkirchen.panomax.com/panorama/?t=" + dt.strftime("%Y-%m-%d+%H-%M-%S")
+st.markdown('<div class="section-title">Webcam - Gmundnerberg (Panomax)</div>', unsafe_allow_html=True)
+now = datetime.now()
+url = panomax_url_gm(now)
+st.components.v1.iframe(
+    url,
+    height=600
+)
+
