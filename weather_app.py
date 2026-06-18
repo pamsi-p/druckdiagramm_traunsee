@@ -665,7 +665,7 @@ st.markdown(
 )
 
 cam = get_uyc_cam()
-st.write("DEBUG URL:", cam)
+# st.write("DEBUG URL:", cam)
 st.image(
     cam,
     use_container_width=True
