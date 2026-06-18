@@ -315,9 +315,20 @@ def fetch_boje_act():
     r.raise_for_status()
     return r.json()
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_boje_trend():
+    r = requests.post(
+        "https://www.klimaboje.at/my_Weather_boje.php?what=meas_trend_mysql&period=2&station=ags",
+        headers=BOJE_HEADERS,
+        timeout=10
+    )
+    r.raise_for_status()
+    return r.text
+
 try:
     with st.spinner("Klimaboje …"):
         act = fetch_boje_act()
+        trend_raw = fetch_boje_trend()
 
     act_json = json.dumps(act)
 
@@ -384,7 +395,7 @@ var col_green  = "#33f9ff";
 var col_yellow = "#f6fc18";
 var col_red    = "LightSalmon";
 var col_bar    = "darkblue";
-var mg = {t:40, r:20, l:20, b:10};
+var mg = {t:40, r:20, l:20, b:30};
 
 var cur   = Number(m.windspeed_ms);
 var old   = Number(m.wind_speed_old);
@@ -433,7 +444,7 @@ function updateUnit() {
 
 // Wind Gauge
 Plotly.newPlot("chart_wind", makeGauge(cur, old, "m/s", 1),
-  {margin:mg, paper_bgcolor:bgr, font:{color:fc, family:"IBM Plex Sans"}, height:200}, cfg);
+  {margin:mg, paper_bgcolor:bgr, font:{color:fc, family:"IBM Plex Sans"}, height:240}, cfg);
 
 // Wind Richtung
 var dir_avg = Number(m.wind_dir_avg);
@@ -446,7 +457,7 @@ Plotly.newPlot("chart_dir", [{
   type:"barpolar", r:[1], theta:[dir_avg], width:[delta],
   marker:{color:['#fc0435']}, showlegend:false
 }], {
-  margin:mg, paper_bgcolor:bgr, height:200,
+  margin:mg, paper_bgcolor:bgr, height:240,
   font:{color:fc, family:"IBM Plex Sans"},
   title:{text:"Mittl. Windrichtung", font:{size:13, color:fc}},
   polar:{
@@ -482,7 +493,7 @@ if (cur_ws) rose_data.push({r:rv.slice(), theta:theta, name:cur_ws,
                              marker:{color:colors[idx_labels.indexOf(cur_ws)]}, type:"barpolar"});
 Plotly.newPlot("chart_rose", rose_data, {
   title:{text:"Wind letzte Stunde", font:{size:13, color:fc}},
-  margin:mg, paper_bgcolor:bgr, height:200,
+  margin:mg, paper_bgcolor:bgr, height:240,
   font:{color:fc, family:"IBM Plex Sans"},
   polar:{barmode:"overlay", bargap:0,
          radialaxis:{ticksuffix:"%", angle:0, dtick:20},
@@ -495,7 +506,121 @@ updateUnit();
 </html>"""
     )
 
-    st.components.v1.html(boje_html, height=900, scrolling=False)
+    st.components.v1.html(boje_html, height=280, scrolling=False)
+
+# ----------------------
+# Historischer Verlauf
+# ----------------------
+
+blocks = trend_raw.split("||xx||")
+names = blocks[0].split(",")
+times = pd.to_datetime(blocks[1].split(","))
+
+def get_series(key):
+    idx = names.index(key)
+    return [
+        float(v) if v not in ("", "None") else None
+        for v in blocks[idx + 1].split(",")
+    ]
+
+ws_max = get_series("wind_speed_max")
+ws_avg = get_series("wind_speed_avg")
+wd_avg = get_series("wind_dir_avg")
+
+ws_max_kt = [
+    v * 1.944 if v is not None else None
+    for v in ws_max
+]
+
+ws_avg_kt = [
+    v * 1.944 if v is not None else None
+    for v in ws_avg
+]
+
+st.markdown(
+    '<div class="section-title">AGS — Verlauf letzte 48h</div>',
+    unsafe_allow_html=True
+)
+
+fig_boje = make_subplots(
+    specs=[[{"secondary_y": True}]]
+)
+
+fig_boje.add_trace(
+    go.Scatter(
+        x=times,
+        y=ws_avg_kt,
+        name="Ø Wind",
+        line=dict(color="#e07a2a", width=2.5)
+    ),
+    secondary_y=False
+)
+
+fig_boje.add_trace(
+    go.Scatter(
+        x=times,
+        y=ws_max_kt,
+        name="Böen",
+        line=dict(color="#c43d1a", width=1.8)
+    ),
+    secondary_y=False
+)
+
+fig_boje.add_trace(
+    go.Scatter(
+        x=times,
+        y=wd_avg,
+        name="Richtung",
+        line=dict(
+            color="#2e9e5b",
+            width=1.5,
+            dash="dot"
+        )
+    ),
+    secondary_y=True
+)
+
+fig_boje = add_now_and_today(fig_boje)
+
+fig_boje.update_layout(
+    xaxis_title="Zeit",
+    yaxis_title="Wind (kt)",
+    legend=dict(
+        orientation="h",
+        y=-0.2
+    ),
+    margin=dict(t=20, b=50),
+    plot_bgcolor="rgba(255,255,255,0.5)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="IBM Plex Sans"),
+    height=320,
+    dragmode="zoom"
+)
+
+fig_boje.update_yaxes(
+    title_text="Wind (kt)",
+    secondary_y=False,
+    fixedrange=True
+)
+
+fig_boje.update_yaxes(
+    title_text="Richtung (°)",
+    range=[0, 360],
+    secondary_y=True,
+    fixedrange=True,
+    showgrid=False
+)
+
+fig_boje.update_xaxes(
+    showgrid=True,
+    gridcolor="rgba(0,0,0,0.05)"
+)
+
+st.plotly_chart(
+    fig_boje,
+    use_container_width=True,
+    config=PLOTLY_CONFIG
+)
 
 except Exception as e:
     st.warning(f"⚠️ Klimaboje nicht erreichbar: {e}")
