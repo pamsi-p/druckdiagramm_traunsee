@@ -340,16 +340,20 @@ try:
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: transparent; font-family: 'IBM Plex Sans', Arial, sans-serif; color: #1a1a1a; }
-.row { display: flex; gap: 10px; margin-bottom: 8px; }
-.cell {
-  flex: 1; min-width: 0;
-  background: rgba(255,255,255,0.75);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0,0,0,0.08);
-  border-radius: 12px;
-  padding: 8px;
-  text-align: center;
+
+.row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;         /* ✅ horizontal scroll */
+  padding-bottom: 8px;
+  scrollbar-width: thin;
 }
+
+.cell {
+  flex: 0 0 300px;          /* ✅ fixe Breite ⇒ nebeneinander */
+  min-width: 300px;
+}
+
 .addon { font-size: 11px; text-align: left; padding: 4px 8px; color: #555; font-family: monospace; }
 .trend-row { font-size: 11px; display: flex; gap: 6px; justify-content: center; padding: 4px 0; font-family: monospace; color: #555; flex-wrap: wrap; }
 select { background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; padding: 2px 6px; font-size: 11px; margin: 4px 0; }
@@ -506,7 +510,7 @@ updateUnit();
 </html>"""
     )
 
-    st.components.v1.html(boje_html, height=300, scrolling=True)
+    st.components.v1.html(boje_html, height=300, scrolling=False)
 
     # ----------------------
     # Historischer Verlauf
@@ -642,4 +646,24 @@ st.components.v1.iframe(
     "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
     height=500,
     scrolling=False,
+)
+
+st.markdown(
+    '<div class="section-title">Webcam — Gmunden (UYC)</div>',
+    unsafe_allow_html=True
+)
+st.image(
+    "https://www.lacus-felix.at/webcam/latest.jpg",
+    caption="Gmunden Stadtplatz",
+    use_container_width=True
+)
+
+st.markdown(
+    '<div class="section-title">Webcam — Gmunden (Stadtplatz)</div>',
+    unsafe_allow_html=True
+)
+
+st.components.v1.iframe(
+    "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
+    height=400
 )
