@@ -506,7 +506,7 @@ updateUnit();
 </html>"""
     )
 
-    st.components.v1.html(boje_html, height=400, scrolling=True)
+    st.components.v1.html(boje_html, height=250, scrolling=True)
 
     # ----------------------
     # Historischer Verlauf
