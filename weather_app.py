@@ -364,101 +364,110 @@ html_scroll += "</div>"
 
 st.markdown(html_scroll, unsafe_allow_html=True)
 
-# ======================
-# Klimaboje AGS — Wind (Original-Charts)
-# ======================
-st.markdown('<div class="section-title">Klimaboje AGS — Wind</div>', unsafe_allow_html=True)
-
-BOJE_BASE = "https://www.klimaboje.at/my_Weather_boje.php"
-BOJE_HEADERS = {
-    "Referer": "https://www.klimaboje.at/?page_id=1481",
-    "X-Requested-With": "XMLHttpRequest",
-    "User-Agent": "Mozilla/5.0",
-}
-
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_boje_act():
-    r = requests.post(
-        f"{BOJE_BASE}?what=meas_act_mysql&station=ags",
-        headers=BOJE_HEADERS, timeout=10
-    )
-    r.raise_for_status()
-    return r.json()
-
-try:
-    with st.spinner("Klimaboje …"):
-        act = fetch_boje_act()
-
-    # JSON sauber als String für JS
-    import json
-    act_json = json.dumps(act)
-
-    BOJE_HTML = f"""
+BOJE_HTML = f"""
 <!DOCTYPE html>
 <html>
 <head>
 <style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ background: black; font-family: Arial; color: white; }}
-.row {{ display: flex; gap: 5px; margin-bottom: 5px; }}
-.cell {{ flex: 1; background: black; text-align: center; }}
-.addon {{ font-size: 12px; text-align: left; padding: 8px; }}
-.add_bottom {{ font-size: 12px; padding: 4px; display: flex; gap: 8px; }}
+body {{ background: transparent; font-family: 'IBM Plex Sans', Arial, sans-serif; color: #1a1a1a; }}
+
+.row {{
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}}
+
+.cell {{
+  flex: 1;
+  background: rgba(255,255,255,0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 12px;
+  padding: 8px;
+  text-align: center;
+  min-width: 0;
+}}
+
+.addon {{
+  font-size: 11px;
+  text-align: left;
+  padding: 4px 8px;
+  color: #555;
+  font-family: 'IBM Plex Mono', monospace;
+}}
+
+.trend-row {{
+  font-size: 11px;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  padding: 4px 0;
+  font-family: 'IBM Plex Mono', monospace;
+  color: #555;
+  flex-wrap: wrap;
+}}
+
+select {{
+  background: rgba(255,255,255,0.7);
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  margin: 4px 0;
+  font-family: 'IBM Plex Mono', monospace;
+}}
+
+/* Mobile: untereinander */
+@media (max-width: 600px) {{
+  .row {{ flex-direction: column; }}
+}}
 </style>
 <script src="https://cdn.plot.ly/plotly-3.0.0.min.js"></script>
 </head>
 <body>
 
 <div class="row">
+  <!-- Wind Gauge -->
   <div class="cell">
     <div id="chart_wind"></div>
     <div id="wind_max" class="addon"></div>
-    <div class="add_bottom">
-      <span>Trend:</span>
+    <div class="trend-row">
+      <span style="color:#888;">Trend:</span>
       <span id="wind_1h"></span>
       <span id="wind_3h"></span>
       <span id="wind_24h"></span>
     </div>
-    <div style="padding:4px;">
-      <select id="wind_unit" onchange="updateUnit()">
-        <option value="1">m/s</option>
-        <option value="1.944">kn</option>
-        <option value="3.6">km/h</option>
-      </select>
-    </div>
+    <select id="wind_unit" onchange="updateUnit()">
+      <option value="1">m/s</option>
+      <option value="1.944">kn</option>
+      <option value="3.6">km/h</option>
+    </select>
   </div>
+
+  <!-- Windrichtung -->
   <div class="cell">
     <div id="chart_dir"></div>
     <div id="wind_dirvar" class="addon"></div>
   </div>
-</div>
 
-<div class="row">
-  <div class="cell" style="flex:0 0 49%;">
+  <!-- Windrose -->
+  <div class="cell">
     <div id="chart_rose"></div>
   </div>
 </div>
 
 <script>
-// Daten direkt von Python injiziert — kein CORS
 var m = {act_json};
 
 var cfg = {{displaylogo:false, displayModeBar:false, responsive:true}};
-var bgr = "black";
-var font_col = "white";
+var bgr = "rgba(0,0,0,0)";
+var fc  = "#1a1a1a";
 var col_green  = "#33f9ff";
 var col_yellow = "#f6fc18";
 var col_red    = "LightSalmon";
 var col_bar    = "darkblue";
-
-var base_gauge = {{
-  axis:  {{range:[0,30], tickwidth:1, tickcolor:col_bar}},
-  bar:   {{color: col_bar}},
-  bgcolor:"white", borderwidth:2, bordercolor:"gray",
-  steps: [{{range:[0,2],  color:col_green}},
-          {{range:[2,18], color:col_yellow}},
-          {{range:[18,30],color:col_red}}]
-}};
+var margin_g   = {{t:40, r:20, l:20, b:10}};
 
 var cur   = Number(m.windspeed_ms);
 var old   = Number(m.wind_speed_old);
@@ -467,118 +476,120 @@ var min24 = Number(m.wind_speed_min_24);
 var t1    = Math.round((cur - Number(m.wind_speed_1h))  * 100)/100;
 var t3    = Math.round((cur - Number(m.wind_speed_3h))  * 100)/100;
 var t24   = Math.round((cur - Number(m.wind_speed_24h)) * 100)/100;
+var raw   = {{cur:cur, old:old, max24:max24, min24:min24, t1:t1, t3:t3, t24:t24}};
 
-// Gespeicherte Rohwerte für Unit-Umrechnung
-var raw = {{cur:cur, old:old, max24:max24, min24:min24, t1:t1, t3:t3, t24:t24, gauge:base_gauge}};
-
-function trend_html(val, unit) {{
-  var col = val >= 0 ? "green" : "red";
-  return '<span style="color:'+col+';">' + Math.round(val*parseFloat(unit)*10)/10 + '</span>';
+function trend_span(val, fact) {{
+  var col = val >= 0 ? "#2e9e5b" : "#e05c2a";
+  return '<span style="color:'+col+';">' + Math.round(val*fact*10)/10 + '</span>';
 }}
 
 function updateUnit() {{
   var fact = parseFloat(document.getElementById("wind_unit").value);
   var ustr = document.getElementById("wind_unit").options[document.getElementById("wind_unit").selectedIndex].text;
   document.getElementById("wind_max").innerHTML =
-    'letzte 24h:<br>max: ' + Math.round(raw.max24*fact*10)/10 +
-    '<br>min: ' + Math.round(raw.min24*fact*10)/10;
-  document.getElementById("wind_1h").innerHTML  = '-1h: '  + trend_html(raw.t1,  fact);
-  document.getElementById("wind_3h").innerHTML  = '-3h: '  + trend_html(raw.t3,  fact);
-  document.getElementById("wind_24h").innerHTML = '-24h: ' + trend_html(raw.t24, fact);
-
-  var fg = JSON.parse(JSON.stringify(raw.gauge));
-  fg.axis.range[1]     = 30 * fact;
-  fg.steps[0].range    = [0*fact, 2*fact];
-  fg.steps[1].range    = [2*fact, 18*fact];
-  fg.steps[2].range    = [18*fact, 30*fact];
+    'max: <b>' + Math.round(raw.max24*fact*10)/10 + '</b> &nbsp; min: <b>' + Math.round(raw.min24*fact*10)/10 + '</b>';
+  document.getElementById("wind_1h").innerHTML  = '-1h: '  + trend_span(raw.t1,  fact);
+  document.getElementById("wind_3h").innerHTML  = '-3h: '  + trend_span(raw.t3,  fact);
+  document.getElementById("wind_24h").innerHTML = '-24h: ' + trend_span(raw.t24, fact);
+  var fg = {{
+    axis:  {{range:[0, 30*fact], tickwidth:1, tickcolor:col_bar}},
+    bar:   {{color:col_bar}},
+    bgcolor:"white", borderwidth:2, bordercolor:"#ccc",
+    steps: [{{range:[0,       2*fact], color:col_green}},
+            {{range:[2*fact, 18*fact], color:col_yellow}},
+            {{range:[18*fact,30*fact], color:col_red}}]
+  }};
   Plotly.react("chart_wind", [{{
     type:"indicator", mode:"gauge+number+delta",
     value: Math.round(raw.cur*fact*10)/10,
-    number:{{suffix:ustr}},
-    title:{{text:"Wind", font:{{size:24}}}},
+    number:{{suffix:ustr, font:{{size:28}}}},
+    title:{{text:"Wind", font:{{size:16, color:fc}}}},
     delta:{{reference: Math.round(raw.old*fact*10)/10,
-            increasing:{{color:"RebeccaPurple"}},
-            decreasing:{{color:"Fuchsia"}}}},
+            increasing:{{color:"#2e9e5b"}}, decreasing:{{color:"#e05c2a"}}}},
     gauge: fg
-  }}], {{margin:{{t:50,r:35,l:35,b:25}}, paper_bgcolor:bgr, font:{{color:font_col,family:"Arial"}}}}, cfg);
+  }}], {{margin:margin_g, paper_bgcolor:bgr, font:{{color:fc, family:"IBM Plex Sans"}}, height:200}}, cfg);
 }}
 
-// Wind Gauge initial
+// --- Wind Gauge ---
 Plotly.newPlot("chart_wind", [{{
   type:"indicator", mode:"gauge+number+delta",
-  value: cur, number:{{suffix:"m/s"}},
-  title:{{text:"Wind", font:{{size:24}}}},
-  delta:{{reference:old, increasing:{{color:"RebeccaPurple"}}, decreasing:{{color:"Fuchsia"}}}},
-  gauge: base_gauge
-}}], {{margin:{{t:50,r:35,l:35,b:25}}, paper_bgcolor:bgr, font:{{color:font_col,family:"Arial"}}}}, cfg);
+  value: cur, number:{{suffix:"m/s", font:{{size:28}}}},
+  title:{{text:"Wind", font:{{size:16, color:fc}}}},
+  delta:{{reference:old, increasing:{{color:"#2e9e5b"}}, decreasing:{{color:"#e05c2a"}}}},
+  gauge:{{
+    axis:  {{range:[0,30], tickwidth:1, tickcolor:col_bar}},
+    bar:   {{color:col_bar}},
+    bgcolor:"white", borderwidth:2, bordercolor:"#ccc",
+    steps: [{{range:[0,2],  color:col_green}},
+            {{range:[2,18], color:col_yellow}},
+            {{range:[18,30],color:col_red}}]
+  }}
+}}], {{margin:margin_g, paper_bgcolor:bgr, font:{{color:fc,family:"IBM Plex Sans"}}, height:200}}, cfg);
 
-// Wind Richtung
+// --- Wind Richtung ---
 var dir_avg = Number(m.wind_dir_avg);
 var dir_max = Number(m.wind_dir_max);
 var delta = dir_max > dir_avg ? (dir_max-dir_avg)/2 : (360+dir_max-dir_avg)/2;
 if (delta < 10) delta = 10;
 document.getElementById("wind_dirvar").innerHTML =
-  'Dir: ' + dir_avg + '°<br>Var: ' + Math.round(delta*10)/10 + '°';
+  'Dir: <b>' + dir_avg + '°</b> &nbsp; Var: <b>' + Math.round(delta*10)/10 + '°</b>';
 
 Plotly.newPlot("chart_dir", [{{
   type:"barpolar", r:[1], theta:[dir_avg], width:[delta],
   marker:{{color:['#fc0435']}}, showlegend:false
 }}], {{
-  margin:{{t:50,r:35,l:35,b:25}}, paper_bgcolor:bgr,
-  font:{{color:font_col,family:"Arial"}},
-  title:{{text:"Mittl. Wind Richtung", font:{{size:24}}}},
+  margin:margin_g, paper_bgcolor:bgr, height:200,
+  font:{{color:fc, family:"IBM Plex Sans"}},
+  title:{{text:"Mittl. Windrichtung", font:{{size:16, color:fc}}}},
   polar:{{
     bgcolor:'#7ed3f5', radialaxis:{{visible:false}},
     angularaxis:{{
       direction:"clockwise", tickmode:"array",
       tickvals:[0,22.5,45,67.5,90,112.5,135,157.5,180,202.5,225,247.5,270,292.5,315,337.5],
       ticktext:["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"],
-      ticks:"", tickfont:{{size:10}}, showline:true
+      ticks:"", tickfont:{{size:9}}, showline:true
     }}
   }}
 }}, cfg);
 
-// Windrose letzte Stunde
+// --- Windrose ---
 var theta = ['N','NNO','NO','ONO','O','OSO','SO','SSO','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 var colors = ['rgb(41,231,243)','rgb(41,136,243)','rgb(44,243,41)','rgb(92,247,15)',
               'rgb(247,244,15)','rgb(247,89,15)','rgb(247,15,54)','rgb(245,20,242)'];
 var idx_labels = ['0-1.5kn','1.5-3.3kn','3.3-5.5kn','5.5-7.9kn',
                   '7.9-10.7kn','10.7-13.8kn','13.8-17.1kn','>17.1kn'];
-var rose_data = []; var cur_ws = ''; var r = new Array(16).fill(0);
+var rose_data = []; var cur_ws = ''; var rv = new Array(16).fill(0);
 for (var x in m.wind_trend) {{
   var line = m.wind_trend[x];
   if (line.wind_speed != cur_ws && cur_ws != '') {{
-    rose_data.push({{r:r.slice(), theta:theta, name:cur_ws,
+    rose_data.push({{r:rv.slice(), theta:theta, name:cur_ws,
                     marker:{{color:colors[idx_labels.indexOf(cur_ws)]}}, type:"barpolar"}});
-    r = new Array(16).fill(0);
+    rv = new Array(16).fill(0);
   }}
   var ti = theta.indexOf(line.wind_dir);
-  if (ti >= 0) r[ti] = Number(line.occur);
+  if (ti >= 0) rv[ti] = Number(line.occur);
   cur_ws = line.wind_speed;
 }}
-if (cur_ws) rose_data.push({{r:r.slice(), theta:theta, name:cur_ws,
+if (cur_ws) rose_data.push({{r:rv.slice(), theta:theta, name:cur_ws,
                               marker:{{color:colors[idx_labels.indexOf(cur_ws)]}}, type:"barpolar"}});
 
 Plotly.newPlot("chart_rose", rose_data, {{
-  title:{{text:"Wind letzte Stunde", font:{{size:24}}}},
-  margin:{{t:50,r:35,l:35,b:25}}, paper_bgcolor:bgr,
-  font:{{color:font_col,family:"Arial"}},
+  title:{{text:"Wind letzte Stunde", font:{{size:16, color:fc}}}},
+  margin:margin_g, paper_bgcolor:bgr, height:200,
+  font:{{color:fc, family:"IBM Plex Sans"}},
   polar:{{barmode:"overlay", bargap:0,
           radialaxis:{{ticksuffix:"%", angle:0, dtick:20}},
           angularaxis:{{direction:"clockwise"}}}}
 }}, cfg);
 
-// Initial befüllen
 updateUnit();
 </script>
 </body>
 </html>
 """
 
-    st.components.v1.html(BOJE_HTML, height=750, scrolling=False)
+    st.components.v1.html(BOJE_HTML, height=380, scrolling=False)
 
-except Exception as e:
-    st.warning(f"⚠️ Klimaboje nicht erreichbar: {e}")
 # ======================
 # Klimaboje AGS — Wind
 # ======================
@@ -648,26 +659,6 @@ try:
 
     # --- Windgeschwindigkeit Chart ---
     fig_boje = make_subplots(specs=[[{"secondary_y": True}]])
-
-    fig_boje.add_trace(go.Scatter(
-        x=times, y=ws_max_kt,
-        name="Böe Max (kt)",
-        line=dict(color="#e05c2a", width=1.5, dash="dot"),
-        fill="tozeroy", fillcolor="rgba(224,92,42,0.06)"
-    ), secondary_y=False)
-
-    fig_boje.add_trace(go.Scatter(
-        x=times, y=ws_avg_kt,
-        name="Wind Avg (kt)",
-        line=dict(color="#1a9de0", width=2.5)
-    ), secondary_y=False)
-
-    fig_boje.add_trace(go.Scatter(
-        x=times, y=wd_avg,
-        name="Richtung (°)",
-        line=dict(color="#aaa", width=1, dash="dot"),
-        visible="legendonly"
-    ), secondary_y=True)
 
     fig_boje = add_now_and_today(fig_boje)
 
