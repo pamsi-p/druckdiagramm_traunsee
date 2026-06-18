@@ -393,7 +393,7 @@ var m = """
         + act_json +
         """;
 var cfg = {displaylogo:false, displayModeBar:false, responsive:true};
-var bgr = "rgba(0,0,0,0)";
+var bgr = "rgba(255,255,255,0.55)";
 var fc  = "#1a1a1a";
 var col_green  = "#33f9ff";
 var col_yellow = "#f6fc18";
@@ -663,7 +663,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-st.components.v1.iframe(
+st.image(
     "https://www.salzi.at/webcam/INTERVAL_FTP/rathausplatz.jpg",
-    height=400
+    use_container_width=True
 )
