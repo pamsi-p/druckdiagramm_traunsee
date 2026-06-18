@@ -364,6 +364,42 @@ html_scroll += "</div>"
 
 st.markdown(html_scroll, unsafe_allow_html=True)
 
+# ======================
+# Klimaboje AGS — Wind (direkte API)
+# ======================
+st.markdown('<div class="section-title">Klimaboje AGS — Wind</div>', unsafe_allow_html=True)
+
+BASE = "https://www.klimaboje.at/my_Weather_boje.php"
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_klimaboje_current():
+    r = requests.get(f"{BASE}?what=meas_act_mysql&station=ags", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_klimaboje_trend(period=2):
+    r = requests.get(f"{BASE}?what=meas_trend_mysql&period={period}&station=ags", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+try:
+    with st.spinner("Klimaboje-Daten werden geladen …"):
+        act = fetch_klimaboje_current()
+        trend = fetch_klimaboje_trend(period=2)
+
+    # --- Aktuelle Werte (Gauges) ---
+    # HINWEIS: Feldnamen müssen ggf. nach erstem Test angepasst werden!
+    # Typische Keys: wind_speed, wind_dir, wind_gust o.ä.
+    st.write("**Rohdaten aktuell (zum Debuggen):**", act)   # ← nach Test entfernen
+    st.write("**Rohdaten Trend keys:**", list(trend.keys()) if isinstance(trend, dict) else trend[:2])
+
+    # --- Zeitreihen-Chart ---
+    # Nach dem ersten Test: Keys durch echte ersetzen und Debug-Ausgaben entfernen
+
+except requests.exceptions.RequestException as e:
+    st.warning(f"⚠️ Klimaboje nicht erreichbar: {e}")
+
 
 # ======================
 # Profiwetter
