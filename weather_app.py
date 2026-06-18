@@ -664,6 +664,6 @@ st.markdown(
 )
 
 st.components.v1.iframe(
-    "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
+    "https://www.salzi.at/webcam/INTERVAL_FTP/rathausplatz.jpg",
     height=400
 )
