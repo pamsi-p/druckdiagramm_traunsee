@@ -656,18 +656,11 @@ def panomax_url(dt):
     return "https://traunkirchen.panomax.com/panorama/?t=" + dt.strftime("%Y-%m-%d+%H-%M-%S")
 st.markdown('<div class="section-title">Webcam - Traunkirchen (Panomax)</div>', unsafe_allow_html=True)
 
-now = datetime.now()
-start = now - timedelta(hours=24)
-
-selected_time = st.slider(
-    "Zeit wählen",
-    min_value=start,
-    max_value=now,
-    value=now,
-    format="DD.MM HH:mm"
-)
-
 url = panomax_url(selected_time)
+st.components.v1.iframe(
+    url,
+    height=600
+)
 
 st.markdown('<div class="section-title">Webcam — Traunkirchen (SCT)</div>', unsafe_allow_html=True)
 st.components.v1.iframe(
@@ -676,10 +669,7 @@ st.components.v1.iframe(
     scrolling=False,
 )
 
-st.components.v1.iframe(
-    url,
-    height=600
-)
+
 
 st.markdown(
     '<div class="section-title">Webcam — Gmunden (UYC)</div>',
