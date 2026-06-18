@@ -365,6 +365,210 @@ html_scroll += "</div>"
 st.markdown(html_scroll, unsafe_allow_html=True)
 
 # ======================
+# Klimaboje AGS — Wind (Original-Charts)
+# ======================
+st.markdown('<div class="section-title">Klimaboje AGS — Wind</div>', unsafe_allow_html=True)
+
+BOJE_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: black; font-family: Arial; color: white; }
+.left  { float: left;  width: 49%; background: black; margin-right: 5px; margin-bottom: 5px; text-align: center; font-weight: bold; }
+.right { float: right; width: 49%; background: black; margin-left:  5px; margin-bottom: 5px; text-align: center; font-weight: bold; }
+.gauge { float: left; width: 80%; background: black; text-align: center; }
+.addon { float: left; width: 20%; background: black; font-size: 12px; color: white; text-align: left; font-weight: bold; padding: 40px 0; }
+.add_bottom      { float: left; width: 100%; height: 20px; background: black; font-size: 12px; color: white; }
+.add_bottom_cont { float: left; width: 20%; text-align: center; font-weight: bold; }
+</style>
+<script src="https://cdn.plot.ly/plotly-3.0.0.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+</head>
+<body>
+
+<div style="overflow:auto">
+  <!-- Wind Gauge + Richtung -->
+  <div class="left">
+    <div id="chart_div_wind" class="gauge"></div>
+    <div id="chart_div_wind_max" class="addon"></div>
+    <div class="add_bottom">
+      <div id="wind_head" class="add_bottom_cont"></div>
+      <div id="wind_1h"   class="add_bottom_cont"></div>
+      <div id="wind_3h"   class="add_bottom_cont"></div>
+      <div id="wind_24h"  class="add_bottom_cont"></div>
+    </div>
+    <div class="add_bottom">
+      <select id="wind_unit_act" onchange="updateWindUnit()">
+        <option value="1">m/s</option>
+        <option value="3.6">km/h</option>
+        <option value="1.944">kn</option>
+      </select>
+      <input type="hidden" id="wind_data_collection" value="">
+    </div>
+  </div>
+  <div class="right">
+    <div id="chart_div_winddir" class="gauge"></div>
+    <div id="chart_div_wind_dirvar" class="addon"></div>
+  </div>
+</div>
+
+<!-- Windrose letzte Stunde -->
+<div style="overflow:auto; clear:both;">
+  <div class="left">
+    <div id="myDiv_1" style="width:100%;"></div>
+  </div>
+</div>
+
+<script>
+var wind_data_collection = {unit:'ms', max:0, min:0, cur:0, trend1:0, trend3:0, trend24:0, format_gauge:{}};
+var plotly_cfg = {displaylogo:false, displayModeBar:false, responsive:true};
+var bgr = "black";
+var font_col = "white";
+var col_green  = "#33f9ff";
+var col_yellow = "#f6fc18";
+var col_red    = "LightSalmon";
+var col_bar    = "darkblue";
+var margin1 = {t:25, r:35, l:35, b:25};
+var margin2 = {t:50, r:35, l:35, b:25};
+
+function updateWindUnit() {
+  var fact = parseFloat(document.getElementById("wind_unit_act").value);
+  var unit_str = document.getElementById("wind_unit_act").options[document.getElementById("wind_unit_act").selectedIndex].text;
+  var wdc = JSON.parse(document.getElementById("wind_data_collection").value || '{}');
+  if (!wdc.cur) return;
+  document.getElementById('chart_div_wind_max').innerHTML =
+    'letzte 24h:<br>max: ' + Math.round(wdc.max * fact * 10)/10 +
+    '<br>min: ' + Math.round(wdc.min * fact * 10)/10;
+  var col = wdc.trend1 > 0 ? "green" : "red";
+  document.getElementById('wind_1h').innerHTML  = '-1h: <a style="color:'+col+';">'  + Math.round(wdc.trend1  * fact*10)/10 + '</a>';
+  col = wdc.trend3  > 0 ? "green" : "red";
+  document.getElementById('wind_3h').innerHTML  = '-3h: <a style="color:'+col+';">'  + Math.round(wdc.trend3  * fact*10)/10 + '</a>';
+  col = wdc.trend24 > 0 ? "green" : "red";
+  document.getElementById('wind_24h').innerHTML = '-24h: <a style="color:'+col+';">' + Math.round(wdc.trend24 * fact*10)/10 + '</a>';
+  Plotly.restyle("chart_div_wind", {value: Math.round(wdc.cur * fact*10)/10, number:{suffix: unit_str}}, 0);
+  var fg = JSON.parse(JSON.stringify(wdc.format_gauge));
+  fg.axis.range[1]      *= fact;
+  fg.steps[0].range[0]  *= fact; fg.steps[0].range[1] *= fact;
+  fg.steps[1].range[0]  *= fact; fg.steps[1].range[1] *= fact;
+  fg.steps[2].range[0]  *= fact; fg.steps[2].range[1] *= fact;
+  Plotly.restyle("chart_div_wind", {gauge: fg}, 0);
+}
+
+function drawAct() {
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", "https://www.klimaboje.at/my_Weather_boje.php?what=meas_act_mysql&station=ags", true);
+  xhr.send();
+  xhr.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var m = JSON.parse(this.responseText);
+
+      // Wind Gauge
+      var cur = Number(m.windspeed_ms);
+      var old = Number(m.wind_speed_old);
+      wind_data_collection.cur   = cur;
+      wind_data_collection.max   = Number(m.wind_speed_max_24);
+      wind_data_collection.min   = Number(m.wind_speed_min_24);
+      wind_data_collection.trend1  = Math.round((cur - Number(m.wind_speed_1h))  * 100)/100;
+      wind_data_collection.trend3  = Math.round((cur - Number(m.wind_speed_3h))  * 100)/100;
+      wind_data_collection.trend24 = Math.round((cur - Number(m.wind_speed_24h)) * 100)/100;
+
+      var gauge_fmt = {
+        axis:  {range:[0,30], tickwidth:1, tickcolor:col_bar},
+        bar:   {color: col_bar},
+        bgcolor: "white", borderwidth:2, bordercolor:"gray",
+        steps: [{range:[0,2],  color:col_green},
+                {range:[2,18], color:col_yellow},
+                {range:[18,30],color:col_red}]
+      };
+      wind_data_collection.format_gauge = gauge_fmt;
+      document.getElementById("wind_data_collection").value = JSON.stringify(wind_data_collection);
+
+      Plotly.newPlot("chart_div_wind", [{
+        type:"indicator", mode:"gauge+number+delta",
+        value: cur, number:{suffix:"m/s"},
+        title:{text:"Wind", font:{size:24}},
+        delta:{reference: old, increasing:{color:"RebeccaPurple"}, decreasing:{color:"Fuchsia"}},
+        gauge: gauge_fmt
+      }], {margin:margin2, paper_bgcolor:bgr, font:{color:font_col, family:"Arial"}}, plotly_cfg);
+
+      // Wind direction polar
+      var dir_avg = Number(m.wind_dir_avg);
+      var dir_max = Number(m.wind_dir_max);
+      var delta = dir_max > dir_avg
+        ? (dir_max - dir_avg) / 2
+        : (360 + dir_max - dir_avg) / 2;
+      if (delta < 10) delta = 10;
+      document.getElementById('chart_div_wind_dirvar').innerHTML =
+        'Dir: ' + dir_avg + '°<br><br>Var: ' + Math.round((dir_max > dir_avg ? (dir_max-dir_avg)/2 : (360+dir_max-dir_avg)/2)*10)/10 + '°';
+
+      Plotly.newPlot("chart_div_winddir", [{
+        type:"barpolar", r:[1], theta:[dir_avg], width:[delta],
+        marker:{color:['#fc0435']}, showlegend:false
+      }], {
+        margin:margin2, paper_bgcolor:bgr,
+        font:{color:font_col, family:"Arial"},
+        title:{text:"Mittl. Wind Richtung", font:{size:24}},
+        polar:{
+          bgcolor:'#7ed3f5',
+          radialaxis:{visible:false},
+          angularaxis:{
+            direction:"clockwise", tickmode:"array",
+            tickvals:[0,22.5,45,67.5,90,112.5,135,157.5,180,202.5,225,247.5,270,292.5,315,337.5],
+            ticktext:["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"],
+            ticks:"", tickfont:{family:"Arial", size:10}, showline:true
+          }
+        }
+      }, plotly_cfg);
+
+      // Windrose letzte Stunde
+      var theta = ['N','NNO','NO','ONO','O','OSO','SO','SSO','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+      var colors = ['rgb(41,231,243)','rgb(41,136,243)','rgb(44,243,41)','rgb(92,247,15)',
+                    'rgb(247,244,15)','rgb(247,89,15)','rgb(247,15,54)','rgb(245,20,242)'];
+      var idx_labels = ['0-1.5kn','1.5-3.3kn','3.3-5.5kn','5.5-7.9kn',
+                        '7.9-10.7kn','10.7-13.8kn','13.8-17.1kn','>17.1kn'];
+      var data = []; var cur_ws = ''; var r = new Array(16).fill(0);
+      for (var x in m.wind_trend) {
+        var line = m.wind_trend[x];
+        if (line.wind_speed != cur_ws && cur_ws != '') {
+          data.push({r:r.slice(), theta:theta, name:cur_ws,
+                     marker:{color: colors[idx_labels.indexOf(cur_ws)]}, type:"barpolar"});
+          r = new Array(16).fill(0);
+        }
+        var ti = theta.indexOf(line.wind_dir);
+        if (ti >= 0) r[ti] = Number(line.occur);
+        cur_ws = line.wind_speed;
+      }
+      if (cur_ws) data.push({r:r.slice(), theta:theta, name:cur_ws,
+                              marker:{color: colors[idx_labels.indexOf(cur_ws)]}, type:"barpolar"});
+
+      Plotly.newPlot("myDiv_1", data, {
+        title:{text:"Wind letzte Stunde", font:{size:24}},
+        margin:margin2, paper_bgcolor:bgr,
+        font:{color:font_col, family:"Arial"},
+        polar:{barmode:"overlay", bargap:0,
+               radialaxis:{ticksuffix:"%", angle:0, dtick:20},
+               angularaxis:{direction:"clockwise"}}
+      }, plotly_cfg);
+
+      document.getElementById('wind_head').innerHTML = 'Trend:';
+      updateWindUnit();
+    }
+  };
+}
+
+drawAct();
+setInterval(drawAct, 60000);
+</script>
+</body>
+</html>
+"""
+
+st.components.v1.html(BOJE_HTML, height=700, scrolling=False)
+
+
+# ======================
 # Klimaboje AGS — Wind
 # ======================
 st.markdown('<div class="section-title">Klimaboje AGS — Wind (Traunkirchen)</div>', unsafe_allow_html=True)
