@@ -655,8 +655,8 @@ def get_uyc_cam():
 def panomax_url(dt):
     return "https://traunkirchen.panomax.com/panorama/?t=" + dt.strftime("%Y-%m-%d+%H-%M-%S")
 st.markdown('<div class="section-title">Webcam - Traunkirchen (Panomax)</div>', unsafe_allow_html=True)
-
-url = panomax_url(selected_time)
+now = datetime.now()
+url = panomax_url(now)
 st.components.v1.iframe(
     url,
     height=600
