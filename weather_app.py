@@ -639,6 +639,24 @@ st.image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=Tru
 # ======================
 # Webcam
 # ======================
+def get_uyc_webcam():
+    now = datetime.now()
+
+    # 1. versuche HTML scraping
+    try:
+        url = "https://www.uyct.at/wetter.html"
+        html = requests.get(url, timeout=10).text
+        match = re.search(r'(https://www\.uyct\.at/webcam/.+?\.jpg)', html)
+        if match:
+            return match.group(1)
+    except:
+        pass
+
+    # 2. fallback (latest guess)
+    date_part = now.strftime("%Y/%m/%d")
+    ts = now.strftime("%Y%m%d%H%M%S")
+    return f"https://www.uyct.at/webcam/{date_part}/UNION%20YACHT%20CLUB%20Traunsee_01_{ts}.jpg"
+    
 st.markdown('<div class="section-title">Webcam — Traunkirchen (SCT)</div>', unsafe_allow_html=True)
 st.components.v1.iframe(
     "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
@@ -650,9 +668,11 @@ st.markdown(
     '<div class="section-title">Webcam — Gmunden (UYC)</div>',
     unsafe_allow_html=True
 )
+
+cam = get_uyc_webcam()
+
 st.image(
-    "https://www.lacus-felix.at/webcam/latest.jpg",
-    caption="Gmunden Stadtplatz",
+    cam,
     use_container_width=True
 )
 
