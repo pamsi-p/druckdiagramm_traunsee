@@ -234,7 +234,7 @@ if dfs is not None:
         return fig
 
     # Chart 1 — Druckgradient
-    st.markdown('<div class="section-title">Druckgradient</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Druckgradient Traunsee</div>', unsafe_allow_html=True)
     fig1 = make_subplots(specs=[[{"secondary_y": True}]])
     fig1.add_trace(go.Scatter(x=df.index, y=df["delta_P_TG"], name="ΔP Traunkirchen–Gmunden",
                               line=dict(color="#555", width=2.5)), secondary_y=False)
@@ -299,7 +299,7 @@ st.markdown(html_scroll, unsafe_allow_html=True)
 
 
 # ======================
-# Klimaboje AGS — Wind
+# AGS — Wind
 # ======================
 st.markdown('<div class="section-title">Klimaboje AGS — Wind</div>', unsafe_allow_html=True)
 
@@ -651,12 +651,34 @@ def get_uyc_cam():
         return match.group(1)
 
     return None
-    
+
+def panomax_url(dt):
+    return "https://traunkirchen.panomax.com/panorama/?t=" + dt.strftime("%Y-%m-%d+%H-%M-%S")
+st.markdown('<div class="section-title">Webcam - Traunkirchen (Panomax)</div>', unsafe_allow_html=True)
+
+now = datetime.now()
+start = now - timedelta(hours=24)
+
+selected_time = st.slider(
+    "Zeit wählen",
+    min_value=start,
+    max_value=now,
+    value=now,
+    format="DD.MM HH:mm"
+)
+
+url = panomax_url(selected_time)
+
 st.markdown('<div class="section-title">Webcam — Traunkirchen (SCT)</div>', unsafe_allow_html=True)
 st.components.v1.iframe(
     "https://g0.ipcamlive.com/player/player.php?alias=sctpano180",
     height=500,
     scrolling=False,
+)
+
+st.components.v1.iframe(
+    url,
+    height=600
 )
 
 st.markdown(
