@@ -341,17 +341,15 @@ try:
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: transparent; font-family: 'IBM Plex Sans', Arial, sans-serif; color: #1a1a1a; }
 
-.row {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;         /* ✅ horizontal scroll */
-  padding-bottom: 8px;
-  scrollbar-width: thin;
-}
-
+.row { display: flex; gap: 10px; margin-bottom: 8px; }
 .cell {
-  flex: 0 0 300px;          /* ✅ fixe Breite ⇒ nebeneinander */
-  min-width: 300px;
+  flex: 1; min-width: 0;
+  background: rgba(255,255,255,0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 12px;
+  padding: 8px;
+  text-align: center;
 }
 
 .addon { font-size: 11px; text-align: left; padding: 4px 8px; color: #555; font-family: monospace; }
@@ -510,7 +508,7 @@ updateUnit();
 </html>"""
     )
 
-    st.components.v1.html(boje_html, height=300, scrolling=False)
+    st.components.v1.html(boje_html, height=300, scrolling=True)
 
     # ----------------------
     # Historischer Verlauf
