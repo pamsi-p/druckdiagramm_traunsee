@@ -125,17 +125,6 @@ FORECAST_MODELS = [
 ]
 MODELS_PARAM = ",".join(FORECAST_MODELS)
 
-# Anzeige-Infos je Modell fürs Markieren der Zeiträume im Chart (Farbe fürs
-# Hintergrundband + Legendentext). "era5_archive" steht für die Vergangenheit.
-MODEL_META = {
-    "geosphere_arome_austria": {"label": "AROME (GeoSphere)", "color": "#2e9e5b"},
-    "icon_d2":                 {"label": "ICON-D2 (DWD)",     "color": "#f4b942"},
-    "icon_eu":                 {"label": "ICON-EU (DWD)",     "color": "#e07a2a"},
-    "icon_seamless":           {"label": "ICON Seamless (DWD)", "color": "#c43d1a"},
-    "best_match":              {"label": "Best Match",        "color": "#8a3ffc"},
-    "era5_archive":            {"label": "ERA5 (Archiv)",     "color": "#999999"},
-}
-
 PLOTLY_CONFIG = {
     "scrollZoom": False,
     "displayModeBar": False,
@@ -165,29 +154,21 @@ def _merge_model_columns(raw: pd.DataFrame, variables: list, models: list) -> pd
     ursprünglichen, unpräfigierten Spaltennamen, wobei pro Zeitpunkt der Wert
     des zuerst verfügbaren Modells (in der übergebenen Reihenfolge) genommen
     wird — also AROME so lange wie vorhanden, danach das nächstbeste Modell.
-    Zusätzlich wird pro Variable eine "<var>_model"-Spalte angelegt, die
-    festhält, welches Modell für den jeweiligen Zeitpunkt verwendet wurde
-    (fürs Markieren der Zeiträume im Chart).
     """
     out = pd.DataFrame(index=raw.index)
     out["time"] = raw["time"]
     for var in variables:
-        value_col = pd.Series(pd.NA, index=raw.index, dtype="object")
-        model_col = pd.Series(pd.NA, index=raw.index, dtype="object")
+        merged = None
         for model in models:
             col = f"{var}_{model}"
             if col not in raw.columns:
                 continue
-            fill = value_col.isna() & raw[col].notna()
-            value_col[fill] = raw.loc[fill, col]
-            model_col[fill] = model
-        if model_col.isna().all() and var in raw.columns:
+            merged = raw[col] if merged is None else merged.combine_first(raw[col])
+        if merged is None and var in raw.columns:
             # Fallback, falls Open-Meteo (z.B. bei nur einem passenden Modell)
             # doch den unpräfigierten Namen zurückgibt.
-            value_col = raw[var]
-            model_col[:] = models[0]
-        out[var] = pd.to_numeric(value_col, errors="coerce")
-        out[f"{var}_model"] = model_col
+            merged = raw[var]
+        out[var] = merged
     return out
 
 
@@ -200,10 +181,7 @@ def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFra
         # Vergangenheit: Reanalyse-Archiv, hier gibt es kein Modell zum Wählen.
         p = {**base_params, "start_date": start.isoformat(), "end_date": min(end, yesterday).isoformat()}
         data = _get("https://archive-api.open-meteo.com/v1/archive", p)
-        raw = pd.DataFrame(data["hourly"])
-        for var in HOURLY_VARS_LIST:
-            raw[f"{var}_model"] = "era5_archive"
-        parts.append(raw)
+        parts.append(pd.DataFrame(data["hourly"]))
     if end >= today:
         # Prognose: AROME zuerst, sonst nächstbestes Regionalmodell für Wind.
         p = {
@@ -235,17 +213,11 @@ def fetch_all(start: date, end: date) -> dict:
 # ======================
 st.title("Traunsee — Druckgradient")
 
-col_s, col_e, col_clear = st.columns([1, 1, 1])
+col_s, col_e, _ = st.columns([1, 1, 3])
 with col_s:
     start_date = st.date_input("Von", date.today())
 with col_e:
     end_date = st.date_input("Bis", date.today() + timedelta(days=2))
-with col_clear:
-    st.write("")
-    st.write("")
-    if st.button("🔄 Wetterdaten neu laden"):
-        fetch_all.clear()
-        st.rerun()
 
 if end_date < start_date:
     st.error("Enddatum muss nach Startdatum liegen.")
@@ -264,14 +236,6 @@ with st.spinner("Wetterdaten werden geladen …"):
 # ======================
 if dfs is not None:
 
-    def _safe_col(frame, name):
-        """Gibt die Spalte zurück, falls vorhanden, sonst eine leere NA-Spalte.
-        Schützt vor KeyError, falls ein veralteter Cache-Eintrag (z.B. von
-        vor einem Code-Update) die _model-Spalten noch nicht kennt."""
-        if name in frame.columns:
-            return frame[name]
-        return pd.Series(pd.NA, index=frame.index, dtype="object")
-
     df = dfs["Traunkirchen"].copy()
     df = df.rename(columns={"pressure_msl": "P_T"})
     df["P_G"] = dfs["Gmunden"]["pressure_msl"]
@@ -283,7 +247,30 @@ if dfs is not None:
     df["wind_dir"] = df["wind_direction_10m"]
     df["G_wind_speed_kt"] = (dfs["Gmunden"]["wind_speed_10m"] / 1.852).round(2)
     df["G_wind_dir"] = dfs["Gmunden"]["wind_direction_10m"]
-    df["G_wind_speed_10m_model"] = _safe_col(dfs["Gmunden"], "wind_speed_10m_model")
+
+    now = pd.Timestamp.now(tz="Europe/Vienna")
+    nearest = df.index.get_indexer([now], method="nearest")[0]
+    row = df.iloc[nearest]
+
+    st.markdown('<div class="section-title">Aktuelle Werte — Traunkirchen</div>', unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+
+    def metric_card(label, value, unit, color="#1a1a1a"):
+        return f"""
+        <div class="metric-card">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value" style="color:{color}">{value}<span class="metric-unit">{unit}</span></div>
+        </div>"""
+
+    with c1:
+        st.markdown(metric_card("ΔP Traunkirchen–Gmunden", f"{row['delta_P_TG']:.2f}", "hPa",
+            color="#e05c2a" if row['delta_P_TG'] > 1.5 else "#1a1a1a"), unsafe_allow_html=True)
+    with c2:
+        st.markdown(metric_card("ΔP Bad Ischl–Ried", f"{row['delta_P_BR']:.2f}", "hPa"), unsafe_allow_html=True)
+    with c3:
+        st.markdown(metric_card("Wind", f"{row['wind_speed_kt']:.1f}", "kt"), unsafe_allow_html=True)
+    with c4:
+        st.markdown(metric_card("Windrichtung", f"{row['wind_dir']:.0f}", "°"), unsafe_allow_html=True)
 
     def add_now_and_today(fig):
         today_ts = pd.Timestamp.now(tz="Europe/Vienna").normalize()
@@ -300,29 +287,6 @@ if dfs is not None:
                                font=dict(color="darkorange", size=11))
         return fig
 
-    def add_model_bands(fig, model_series):
-        """Hinterlegt den Chart mit farbigen Bändern, die zeigen, welches
-        Wettermodell (AROME, ICON-D2, ...) für welchen Zeitraum verwendet wurde."""
-        s = model_series.dropna()
-        if s.empty:
-            return fig
-        seg_id = s.ne(s.shift()).cumsum()
-        shown = set()
-        for _, seg in s.groupby(seg_id):
-            model = seg.iloc[0]
-            meta = MODEL_META.get(model, {"label": str(model), "color": "#999999"})
-            x0 = seg.index[0]
-            x1 = seg.index[-1] + pd.Timedelta(hours=1)
-            fig.add_vrect(x0=x0, x1=x1, fillcolor=meta["color"], opacity=0.10,
-                          layer="below", line_width=0)
-            if model not in shown:
-                fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
-                                          marker=dict(size=10, symbol="square",
-                                                      color=meta["color"], opacity=0.5),
-                                          name=meta["label"], showlegend=True))
-                shown.add(model)
-        return fig
-
     # Chart 1 — Druckgradient
     st.markdown('<div class="section-title">Druckgradient Traunsee</div>', unsafe_allow_html=True)
     fig1 = make_subplots(specs=[[{"secondary_y": True}]])
@@ -333,7 +297,6 @@ if dfs is not None:
     fig1.add_trace(go.Scatter(x=df.index, y=df["cloud_cover"], name="Gesamtbewölkung (%)",
                               visible="legendonly", line=dict(color="#aaa", dash="dot", width=1.5)),
                               secondary_y=True)
-    fig1 = add_model_bands(fig1, _safe_col(df, "pressure_msl_model"))
     fig1 = add_now_and_today(fig1)
     fig1.add_hline(y=1.5, line=dict(color="crimson", dash="dash", width=1.5),
                    annotation_text="Oberwind Süd (1.5 hPa)", annotation_position="top right",
@@ -349,7 +312,7 @@ if dfs is not None:
     st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
 
     # Chart 2 — Wind (Traunkirchen, dann Gmunden)
-    def wind_chart(speed_col, dir_col, model_col, label):
+    def wind_chart(speed_col, dir_col, label):
         st.markdown(f'<div class="section-title">Wind — {label}</div>', unsafe_allow_html=True)
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df[speed_col], name="Windstärke (kt)",
@@ -357,7 +320,6 @@ if dfs is not None:
                                   fill="tozeroy", fillcolor="rgba(224,122,42,0.08)"))
         fig.add_trace(go.Scatter(x=df.index, y=df[dir_col], name="Windrichtung (°)",
                                   line=dict(color="#2e9e5b", dash="dot", width=1.5), yaxis="y2"))
-        fig = add_model_bands(fig, _safe_col(df, model_col))
         fig = add_now_and_today(fig)
         max_kt = df[speed_col].max()
         fig.update_layout(
@@ -372,8 +334,8 @@ if dfs is not None:
         fig.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
         st.plotly_chart(fig, use_container_width=True)
 
-    wind_chart("wind_speed_kt", "wind_dir", "wind_speed_10m_model", "Traunkirchen")
-    wind_chart("G_wind_speed_kt", "G_wind_dir", "G_wind_speed_10m_model", "Gmunden")
+    wind_chart("wind_speed_kt", "wind_dir", "Traunkirchen")
+    wind_chart("G_wind_speed_kt", "G_wind_dir", "Gmunden")
 
 else:
     st.info("Druckgradient und Wind sind nicht verfügbar — die Diagramme werden angezeigt, sobald die API wieder erreichbar ist.")
