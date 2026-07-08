@@ -99,13 +99,31 @@ h1, h2, h3, h4, h5, h6 {
 # Koordinaten
 # ======================
 COORDS = {
-    "Traunkirchen": (47.993, 13.745),
-    "Gmunden":      (47.918, 13.799),
+    "Traunkirchen": (47.845583, 13.794628),
+    "Gmunden":      (47.906002, 13.797635),
     "Bad_Ischl":    (47.714, 13.632),
     "Ried":         (48.198, 13.490),
 }
 
 HOURLY_VARS = "pressure_msl,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,wind_speed_10m,wind_direction_10m"
+HOURLY_VARS_LIST = HOURLY_VARS.split(",")
+
+# Modell-Priorität für die Prognose (nur für heute/Zukunft relevant, nicht fürs Archiv):
+# 1) GeoSphere AROME Austria — hochauflösendstes Modell für den Alpenraum (2.5 km),
+#    liefert aber nur die ersten ~60 Stunden.
+# 2) DWD ICON-D2 — nächstbestes hochauflösendes Regionalmodell (2 km, Mitteleuropa).
+# 3) DWD ICON-EU — gröberes, aber länger reichendes Regionalmodell (~7 km).
+# 4) DWD ICON Seamless — deckt die komplette ICON-Kette (D2+EU+Global) ab.
+# 5) best_match — Open-Meteo-Standardauswahl als letzter Fallback, damit auch der
+#    Rest des angefragten Zeitraums (z.B. Tag 8-16) garantiert befüllt ist.
+FORECAST_MODELS = [
+    "geosphere_arome_austria",
+    "icon_d2",
+    "icon_eu",
+    "icon_seamless",
+    "best_match",
+]
+MODELS_PARAM = ",".join(FORECAST_MODELS)
 
 PLOTLY_CONFIG = {
     "scrollZoom": False,
@@ -128,19 +146,53 @@ def _get(url, params):
     raise requests.exceptions.HTTPError("Rate limit: zu viele Anfragen an Open-Meteo.")
 
 
+def _merge_model_columns(raw: pd.DataFrame, variables: list, models: list) -> pd.DataFrame:
+    """
+    Wenn mehrere Modelle angefragt werden, liefert Open-Meteo pro Variable eine
+    Spalte je Modell (z.B. wind_speed_10m_geosphere_arome_austria,
+    wind_speed_10m_icon_d2, ...). Diese Funktion baut daraus wieder die
+    ursprünglichen, unpräfigierten Spaltennamen, wobei pro Zeitpunkt der Wert
+    des zuerst verfügbaren Modells (in der übergebenen Reihenfolge) genommen
+    wird — also AROME so lange wie vorhanden, danach das nächstbeste Modell.
+    """
+    out = pd.DataFrame(index=raw.index)
+    out["time"] = raw["time"]
+    for var in variables:
+        merged = None
+        for model in models:
+            col = f"{var}_{model}"
+            if col not in raw.columns:
+                continue
+            merged = raw[col] if merged is None else merged.combine_first(raw[col])
+        if merged is None and var in raw.columns:
+            # Fallback, falls Open-Meteo (z.B. bei nur einem passenden Modell)
+            # doch den unpräfigierten Namen zurückgibt.
+            merged = raw[var]
+        out[var] = merged
+    return out
+
+
 def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFrame:
     today = date.today()
     yesterday = today - timedelta(days=1)
     base_params = dict(latitude=lat, longitude=lon, hourly=HOURLY_VARS, timezone="Europe/Vienna")
     parts = []
     if start <= yesterday:
+        # Vergangenheit: Reanalyse-Archiv, hier gibt es kein Modell zum Wählen.
         p = {**base_params, "start_date": start.isoformat(), "end_date": min(end, yesterday).isoformat()}
         data = _get("https://archive-api.open-meteo.com/v1/archive", p)
         parts.append(pd.DataFrame(data["hourly"]))
     if end >= today:
-        p = {**base_params, "start_date": max(start, today).isoformat(), "end_date": end.isoformat()}
+        # Prognose: AROME zuerst, sonst nächstbestes Regionalmodell für Wind.
+        p = {
+            **base_params,
+            "models": MODELS_PARAM,
+            "start_date": max(start, today).isoformat(),
+            "end_date": end.isoformat(),
+        }
         data = _get("https://api.open-meteo.com/v1/forecast", p)
-        parts.append(pd.DataFrame(data["hourly"]))
+        raw = pd.DataFrame(data["hourly"])
+        parts.append(_merge_model_columns(raw, HOURLY_VARS_LIST, FORECAST_MODELS))
     df = pd.concat(parts).drop_duplicates(subset="time").reset_index(drop=True)
     df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
     df.set_index("time", inplace=True)
@@ -193,6 +245,8 @@ if dfs is not None:
     df["delta_P_BR"] = df["P_B"] - df["P_R"]
     df["wind_speed_kt"] = (df["wind_speed_10m"] / 1.852).round(2)
     df["wind_dir"] = df["wind_direction_10m"]
+    df["G_wind_speed_kt"] = (dfs["Gmunden"]["wind_speed_10m"] / 1.852).round(2)
+    df["G_wind_dir"] = dfs["Gmunden"]["wind_direction_10m"]
 
     now = pd.Timestamp.now(tz="Europe/Vienna")
     nearest = df.index.get_indexer([now], method="nearest")[0]
@@ -257,27 +311,31 @@ if dfs is not None:
     fig1.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)", fixedrange=True, secondary_y=False)
     st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CONFIG)
 
-    # Chart 2 — Wind
-    st.markdown('<div class="section-title">Wind — Traunkirchen</div>', unsafe_allow_html=True)
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=df.index, y=df["wind_speed_kt"], name="Windstärke (kt)",
-                              line=dict(color="#e07a2a", width=2.5),
-                              fill="tozeroy", fillcolor="rgba(224,122,42,0.08)"))
-    fig2.add_trace(go.Scatter(x=df.index, y=df["wind_dir"], name="Windrichtung (°)",
-                              line=dict(color="#2e9e5b", dash="dot", width=1.5), yaxis="y2"))
-    fig2 = add_now_and_today(fig2)
-    max_kt = df["wind_speed_kt"].max()
-    fig2.update_layout(
-        xaxis_title="Zeit",
-        yaxis=dict(title="Windstärke (kt)", range=[0, max(max_kt * 1.2, 5)], fixedrange=True,
-                   showgrid=True, gridcolor="rgba(0,0,0,0.05)"),
-        yaxis2=dict(title="Windrichtung (°)", overlaying="y", side="right",
-                    range=[0, 360], showgrid=False, fixedrange=True),
-        legend=dict(orientation="h", y=-0.2), margin=dict(t=20, b=50), dragmode="zoom",
-        plot_bgcolor="rgba(255,255,255,0.5)", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="IBM Plex Sans"), height=320)
-    fig2.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
-    st.plotly_chart(fig2, use_container_width=True)
+    # Chart 2 — Wind (Traunkirchen, dann Gmunden)
+    def wind_chart(speed_col, dir_col, label):
+        st.markdown(f'<div class="section-title">Wind — {label}</div>', unsafe_allow_html=True)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df.index, y=df[speed_col], name="Windstärke (kt)",
+                                  line=dict(color="#e07a2a", width=2.5),
+                                  fill="tozeroy", fillcolor="rgba(224,122,42,0.08)"))
+        fig.add_trace(go.Scatter(x=df.index, y=df[dir_col], name="Windrichtung (°)",
+                                  line=dict(color="#2e9e5b", dash="dot", width=1.5), yaxis="y2"))
+        fig = add_now_and_today(fig)
+        max_kt = df[speed_col].max()
+        fig.update_layout(
+            xaxis_title="Zeit",
+            yaxis=dict(title="Windstärke (kt)", range=[0, max(max_kt * 1.2, 5)], fixedrange=True,
+                       showgrid=True, gridcolor="rgba(0,0,0,0.05)"),
+            yaxis2=dict(title="Windrichtung (°)", overlaying="y", side="right",
+                        range=[0, 360], showgrid=False, fixedrange=True),
+            legend=dict(orientation="h", y=-0.2), margin=dict(t=20, b=50), dragmode="zoom",
+            plot_bgcolor="rgba(255,255,255,0.5)", paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="IBM Plex Sans"), height=320)
+        fig.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
+        st.plotly_chart(fig, use_container_width=True)
+
+    wind_chart("wind_speed_kt", "wind_dir", "Traunkirchen")
+    wind_chart("G_wind_speed_kt", "G_wind_dir", "Gmunden")
 
 else:
     st.info("Druckgradient und Wind sind nicht verfügbar — die Diagramme werden angezeigt, sobald die API wieder erreichbar ist.")
@@ -701,4 +759,3 @@ st.components.v1.iframe(
     url,
     height=600
 )
-
