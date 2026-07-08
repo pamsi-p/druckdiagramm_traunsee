@@ -235,11 +235,17 @@ def fetch_all(start: date, end: date) -> dict:
 # ======================
 st.title("Traunsee — Druckgradient")
 
-col_s, col_e, _ = st.columns([1, 1, 3])
+col_s, col_e, col_clear = st.columns([1, 1, 1])
 with col_s:
     start_date = st.date_input("Von", date.today())
 with col_e:
     end_date = st.date_input("Bis", date.today() + timedelta(days=2))
+with col_clear:
+    st.write("")
+    st.write("")
+    if st.button("🔄 Wetterdaten neu laden"):
+        fetch_all.clear()
+        st.rerun()
 
 if end_date < start_date:
     st.error("Enddatum muss nach Startdatum liegen.")
@@ -258,6 +264,14 @@ with st.spinner("Wetterdaten werden geladen …"):
 # ======================
 if dfs is not None:
 
+    def _safe_col(frame, name):
+        """Gibt die Spalte zurück, falls vorhanden, sonst eine leere NA-Spalte.
+        Schützt vor KeyError, falls ein veralteter Cache-Eintrag (z.B. von
+        vor einem Code-Update) die _model-Spalten noch nicht kennt."""
+        if name in frame.columns:
+            return frame[name]
+        return pd.Series(pd.NA, index=frame.index, dtype="object")
+
     df = dfs["Traunkirchen"].copy()
     df = df.rename(columns={"pressure_msl": "P_T"})
     df["P_G"] = dfs["Gmunden"]["pressure_msl"]
@@ -269,7 +283,7 @@ if dfs is not None:
     df["wind_dir"] = df["wind_direction_10m"]
     df["G_wind_speed_kt"] = (dfs["Gmunden"]["wind_speed_10m"] / 1.852).round(2)
     df["G_wind_dir"] = dfs["Gmunden"]["wind_direction_10m"]
-    df["G_wind_speed_10m_model"] = dfs["Gmunden"]["wind_speed_10m_model"]
+    df["G_wind_speed_10m_model"] = _safe_col(dfs["Gmunden"], "wind_speed_10m_model")
 
     def add_now_and_today(fig):
         today_ts = pd.Timestamp.now(tz="Europe/Vienna").normalize()
@@ -319,7 +333,7 @@ if dfs is not None:
     fig1.add_trace(go.Scatter(x=df.index, y=df["cloud_cover"], name="Gesamtbewölkung (%)",
                               visible="legendonly", line=dict(color="#aaa", dash="dot", width=1.5)),
                               secondary_y=True)
-    fig1 = add_model_bands(fig1, df["pressure_msl_model"])
+    fig1 = add_model_bands(fig1, _safe_col(df, "pressure_msl_model"))
     fig1 = add_now_and_today(fig1)
     fig1.add_hline(y=1.5, line=dict(color="crimson", dash="dash", width=1.5),
                    annotation_text="Oberwind Süd (1.5 hPa)", annotation_position="top right",
@@ -343,7 +357,7 @@ if dfs is not None:
                                   fill="tozeroy", fillcolor="rgba(224,122,42,0.08)"))
         fig.add_trace(go.Scatter(x=df.index, y=df[dir_col], name="Windrichtung (°)",
                                   line=dict(color="#2e9e5b", dash="dot", width=1.5), yaxis="y2"))
-        fig = add_model_bands(fig, df[model_col])
+        fig = add_model_bands(fig, _safe_col(df, model_col))
         fig = add_now_and_today(fig)
         max_kt = df[speed_col].max()
         fig.update_layout(
