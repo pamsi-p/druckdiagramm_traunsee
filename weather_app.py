@@ -132,6 +132,26 @@ PLOTLY_CONFIG = {
     "responsive": True,
 }
 
+
+# ======================
+# Bild-Wrapper (fängt fehlende/nicht erreichbare Bilder ab)
+# ======================
+def safe_image(url, caption=None, **kwargs):
+    """
+    Zeigt ein Bild an, ohne die App bei nicht verfügbaren oder nicht
+    erreichbaren Bildquellen (z.B. url=None oder Netzwerkfehler) abstürzen
+    zu lassen.
+    """
+    label = f" ({caption})" if caption else ""
+    if not url:
+        st.info(f"⚠️ Bild nicht verfügbar{label}.")
+        return
+    try:
+        st.image(url, caption=caption, **kwargs)
+    except Exception as e:
+        st.info(f"⚠️ Bild nicht verfügbar{label}: {e}")
+
+
 # ======================
 # Open-Meteo API
 # ======================
@@ -694,20 +714,20 @@ except Exception as e:
 # ======================
 st.markdown('<div class="section-title">Profiwetter.ch — Traunkirchen</div>', unsafe_allow_html=True)
 ts = int(time.time())
-st.image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=True)
+safe_image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=True)
 
 
 # ======================
 # Webcam
 # ======================
 def get_uyc_cam():
-    html = requests.get("https://www.uyct.at/wetter.html", timeout=10).text
-
-    match = re.search(r'(https://www\.uyct\.at/webcam/\d{4}/\d{2}/\d{2}/[^"]+\.jpg)', html)
-
-    if match:
-        return match.group(1)
-
+    try:
+        html = requests.get("https://www.uyct.at/wetter.html", timeout=10).text
+        match = re.search(r'(https://www\.uyct\.at/webcam/\d{4}/\d{2}/\d{2}/[^"]+\.jpg)', html)
+        if match:
+            return match.group(1)
+    except requests.exceptions.RequestException:
+        pass
     return None
 
 
@@ -734,18 +754,14 @@ st.markdown(
 )
 
 cam = get_uyc_cam()
-# st.write("DEBUG URL:", cam)
-st.image(
-    cam,
-    use_container_width=True
-)
+safe_image(cam, use_container_width=True)
 
 st.markdown(
     '<div class="section-title">Webcam — Gmunden (Stadtplatz)</div>',
     unsafe_allow_html=True
 )
 
-st.image(
+safe_image(
     "https://www.salzi.at/webcam/INTERVAL_FTP/rathausplatz.jpg",
     use_container_width=True
 )
