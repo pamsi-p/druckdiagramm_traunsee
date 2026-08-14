@@ -805,7 +805,7 @@ GMUNDEN_LAT, GMUNDEN_LON = COORDS["Gmunden"]
  
  
 @st.cache_data(ttl=1800, show_spinner=False)
-def hole_wind_vergleich(lat: float, lon: float, model_ids: tuple, tage: int):
+def hole_wind_vergleich(lat: float, lon: float, model_ids: tuple, start: date, end: date):
     r = requests.get(
         "https://api.open-meteo.com/v1/forecast",
         params={
@@ -813,7 +813,8 @@ def hole_wind_vergleich(lat: float, lon: float, model_ids: tuple, tage: int):
             "longitude": lon,
             "hourly": "wind_speed_10m,wind_direction_10m",
             "models": ",".join(model_ids),
-            "forecast_days": tage,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
             "timezone": "Europe/Vienna",
         },
         timeout=20,
@@ -822,16 +823,14 @@ def hole_wind_vergleich(lat: float, lon: float, model_ids: tuple, tage: int):
     return r.json()
  
  
-col_cmp1, col_cmp2 = st.columns(2)
-with col_cmp1:
-    vergleich_tage = st.slider("Tage", 1, 16, 5, key="vergleich_tage")
-with col_cmp2:
-    pfeil_intervall = st.slider("Pfeilabstand (Stunden)", 1, 12, 3, key="pfeil_intervall")
+# Nutzt denselben Zeitraum (start_date/end_date), der ganz oben auf der Seite
+# eingestellt wurde — kein eigener Tage-Regler mehr nötig.
+pfeil_intervall = st.slider("Pfeilabstand (Stunden)", 1, 12, 3, key="pfeil_intervall")
  
 model_ids = tuple(COMPARE_MODELS.values())
  
 try:
-    cmp_data = hole_wind_vergleich(GMUNDEN_LAT, GMUNDEN_LON, model_ids, vergleich_tage)
+    cmp_data = hole_wind_vergleich(GMUNDEN_LAT, GMUNDEN_LON, model_ids, start_date, end_date)
     cmp_zeit = pd.to_datetime(cmp_data["hourly"]["time"])
  
     fig_cmp = make_subplots(
