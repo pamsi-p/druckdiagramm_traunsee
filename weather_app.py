@@ -720,12 +720,14 @@ safe_image(f"https://profiwetter.ch/mos_P0062.svg?t={ts}", use_container_width=T
 # ======================
 # Webcam
 # ======================
+# ======================
+
 def get_uyc_cam():
     try:
-        html = requests.get("https://www.uyct.at/wetter.html", timeout=10).text
-        match = re.search(r'(https://www\.uyct\.at/webcam/\d{4}/\d{2}/\d{2}/[^"]+\.jpg)', html)
-        if match:
-            return match.group(1)
+        url = f"https://uyct.at/webcam/UYCT.jpg?t={int(time.time())}"
+        r = requests.head(url, timeout=10)
+        if r.status_code == 200:
+            return url
     except requests.exceptions.RequestException:
         pass
     return None
