@@ -819,7 +819,7 @@ try:
     # Nutzt denselben Zeitraum (start_date/end_date), der ganz oben auf der
     # Seite eingestellt wurde.
     arome_data = hole_arome_wind(GMUNDEN_LAT, GMUNDEN_LON, start_date, end_date)
-    arome_zeit = pd.to_datetime(arome_data["hourly"]["time"])
+    arome_zeit = pd.to_datetime(arome_data["hourly"]["time"]).tz_localize("Europe/Vienna")
  
     speed = arome_data["hourly"].get("wind_speed_10m")
     boen = arome_data["hourly"].get("wind_gusts_10m")
@@ -830,6 +830,24 @@ try:
     else:
         speed_kt = [v / 1.852 if v is not None else None for v in speed]
         boen_kt = [v / 1.852 if v is not None else None for v in boen]
+ 
+        # Heute-Markierung + "Jetzt"-Linie, exakt wie bei Druckgradient und
+        # den beiden Windcharts oben (add_now_and_today), nur bezogen auf
+        # den AROME-Zeitindex statt auf df.
+        def add_now_and_today_arome(fig):
+            today_ts = pd.Timestamp.now(tz="Europe/Vienna").normalize()
+            tomorrow_ts = today_ts + pd.Timedelta(days=1)
+            now_ts = pd.Timestamp.now(tz="Europe/Vienna")
+            fig.add_vrect(x0=today_ts, x1=tomorrow_ts,
+                          fillcolor="#FFE57F", opacity=0.18, layer="below", line_width=0)
+            if arome_zeit.min() <= now_ts <= arome_zeit.max():
+                fig.add_shape(type="line", x0=now_ts, x1=now_ts, y0=0, y1=1,
+                              line=dict(color="darkorange", width=2, dash="dot"),
+                              xref="x", yref="paper")
+                fig.add_annotation(x=now_ts, y=0.97, text="Jetzt", showarrow=False,
+                                   xanchor="left", xref="x", yref="paper",
+                                   font=dict(color="darkorange", size=11))
+            return fig
  
         fig_arome = make_subplots(
             rows=2, cols=1, shared_xaxes=True,
@@ -872,6 +890,8 @@ try:
             row=2, col=1,
         )
  
+        fig_arome = add_now_and_today_arome(fig_arome)
+ 
         fig_arome.update_yaxes(
             title_text="Wind (kt)", row=1, col=1,
             showgrid=True, gridcolor="rgba(0,0,0,0.05)", fixedrange=True,
@@ -896,3 +916,4 @@ try:
  
 except requests.exceptions.RequestException as e:
     st.warning(f"⚠️ AROME-Winddaten nicht erreichbar: {e}")
+ 
