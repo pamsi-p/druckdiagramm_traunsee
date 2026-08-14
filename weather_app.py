@@ -916,4 +916,1387 @@ try:
  
 except requests.exceptions.RequestException as e:
     st.warning(f"⚠️ AROME-Winddaten nicht erreichbar: {e}")
+
+
+# ============================================================
+# TRAUNSEE LIVE WINDMODELL
+# ============================================================
+#
+# Modi:
+#   1) Nur Messdaten
+#   2) AROME
+#   3) AROME + Messdaten
+#
+# Nur:
+#   - Grundwind
+#   - Böen
+#   - Windrichtung
+#
+# Das Windfeld wird intern als U/V-Komponenten verarbeitet.
+# Dadurch können Richtung und Geschwindigkeit korrekt
+# kombiniert/interpoliert werden.
+#
+# ============================================================
+
+import numpy as np
+import math
+import branca.colormap as bcm
+import folium
+from folium.plugins import HeatMap
+import streamlit.components.v1 as components
+
+
+# ------------------------------------------------------------
+# KONFIGURATION
+# ------------------------------------------------------------
+
+TRAUNSEE_BOUNDS = {
+    "lat_min": 47.80,
+    "lat_max": 47.93,
+    "lon_min": 13.68,
+    "lon_max": 13.87,
+}
+
+TRAUNSEE_CENTER = [47.865, 13.805]
+
+# Raster des eigenen Windmodells.
+# 25 x 35 ist für einen ersten Live-Betrieb ausreichend.
+GRID_N_LAT = 25
+GRID_N_LON = 35
+
+AROME_MODEL_ID = "geosphere_arome_austria"
+
+# Aktualisierung der Live-Karte
+LIVE_REFRESH_SECONDS = 60
+
+
+# ------------------------------------------------------------
+# STATIONEN
+# ------------------------------------------------------------
+#
+# Die Koordinaten werden hier bewusst separat gepflegt.
+# Dadurch kann die Datenquelle später ausgetauscht werden,
+# ohne das Windmodell zu verändern.
+#
+# Quellen:
+#   SALT Ebensee
+#   SC Traunkirchen
+#   AGS Gmunden
+#   Bräuwiese
+#   Altmünster / Nachdemsee
+#   Traunkirchen Ort
+#
+# ------------------------------------------------------------
+
+TRAUNSEE_STATIONS = {
+
+    "SALT Ebensee": {
+        "lat": 47.8110,
+        "lon": 13.7800,
+        "source": "SALT",
+        "source_url": "https://salt.co.at/wetter",
+    },
+
+    "SC Traunkirchen": {
+        "lat": 47.8540,
+        "lon": 13.7890,
+        "source": "SCT",
+        "source_url":
+            "https://www.sc-traunkirchen.at/webcam-wetter/",
+    },
+
+    "AGS Gmunden": {
+        "lat": 47.9060,
+        "lon": 13.7976,
+        "source": "Klimaboje AGS",
+        "source_url":
+            "https://www.klimaboje.at/?page_id=1481",
+    },
+
+    "Bräuwiese": {
+        "lat": 47.8750,
+        "lon": 13.7890,
+        "source": "AWEKAS",
+        "source_url":
+            "https://stationsweb.awekas.at/index-tab?id=23403",
+        "awekas_id": 23403,
+    },
+
+    "Altmünster / Nachdemsee": {
+        "lat": 47.899098,
+        "lon": 13.783492,
+        "source": "AWEKAS",
+        "source_url":
+            "https://www.awekas.at/map/de/?lon=13.783492&lat=47.899098",
+        "awekas_id": None,
+    },
+
+    "Traunkirchen Ort": {
+        "lat": 47.871695,
+        "lon": 13.780628,
+        "source": "AWEKAS",
+        "source_url":
+            "https://www.awekas.at/map/de/?lon=13.780628&lat=47.871695",
+        "awekas_id": None,
+    },
+}
+
+
+# ------------------------------------------------------------
+# EINHEITEN
+# ------------------------------------------------------------
+
+def kmh_to_kt(value):
+    if value is None or pd.isna(value):
+        return np.nan
+    return float(value) / 1.852
+
+
+def ms_to_kt(value):
+    if value is None or pd.isna(value):
+        return np.nan
+    return float(value) / 1.852
+
+
+# ------------------------------------------------------------
+# WIND -> U/V
+# ------------------------------------------------------------
+#
+# Meteorologische Richtung:
+#   0°   = Wind kommt aus Norden
+#   90°  = Osten
+#   180° = Süden
+#   270° = Westen
+#
+# U/V wird so gerechnet, dass ein Rückweg zu
+# Geschwindigkeit + meteorologischer Richtung
+# möglich ist.
+# ------------------------------------------------------------
+
+def wind_to_uv(speed, direction_deg):
+
+    direction_rad = np.radians(direction_deg)
+
+    u = -speed * np.sin(direction_rad)
+    v = -speed * np.cos(direction_rad)
+
+    return u, v
+
+
+def uv_to_wind(u, v):
+
+    speed = np.sqrt(u ** 2 + v ** 2)
+
+    direction = (
+        np.degrees(np.arctan2(-u, -v)) + 360
+    ) % 360
+
+    return speed, direction
+
+
+# ------------------------------------------------------------
+# RASTER
+# ------------------------------------------------------------
+
+def create_grid():
+
+    lats = np.linspace(
+        TRAUNSEE_BOUNDS["lat_min"],
+        TRAUNSEE_BOUNDS["lat_max"],
+        GRID_N_LAT
+    )
+
+    lons = np.linspace(
+        TRAUNSEE_BOUNDS["lon_min"],
+        TRAUNSEE_BOUNDS["lon_max"],
+        GRID_N_LON
+    )
+
+    lon_grid, lat_grid = np.meshgrid(lons, lats)
+
+    return lat_grid, lon_grid
+
+
+# ------------------------------------------------------------
+# AROME
+# ------------------------------------------------------------
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_arome_grid():
+
+    lat_grid, lon_grid = create_grid()
+
+    flat_lat = lat_grid.flatten()
+    flat_lon = lon_grid.flatten()
+
+    params = {
+        "latitude": ",".join(
+            f"{x:.5f}" for x in flat_lat
+        ),
+
+        "longitude": ",".join(
+            f"{x:.5f}" for x in flat_lon
+        ),
+
+        "hourly":
+            "wind_speed_10m,"
+            "wind_gusts_10m,"
+            "wind_direction_10m",
+
+        "models": AROME_MODEL_ID,
+
+        "forecast_days": 1,
+
+        "timezone": "Europe/Vienna",
+    }
+
+    r = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params=params,
+        timeout=30,
+    )
+
+    r.raise_for_status()
+
+    data = r.json()
+
+    # Bei mehreren Koordinaten kommt eine Liste zurück.
+    if isinstance(data, dict):
+        data = [data]
+
+    rows = []
+
+    for i, item in enumerate(data):
+
+        hourly = item["hourly"]
+
+        speed = hourly["wind_speed_10m"][0]
+        gust = hourly["wind_gusts_10m"][0]
+        direction = hourly["wind_direction_10m"][0]
+
+        rows.append({
+            "lat": flat_lat[i],
+            "lon": flat_lon[i],
+            "speed": kmh_to_kt(speed),
+            "gust": kmh_to_kt(gust),
+            "direction": direction,
+            "source": "AROME",
+        })
+
+    return pd.DataFrame(rows)
+
+
+# ------------------------------------------------------------
+# AWEKAS
+# ------------------------------------------------------------
+#
+# AWEKAS benötigt einen API-Key.
+#
+# In Streamlit:
+#
+# .streamlit/secrets.toml
+#
+# [awekas]
+# api_key = "DEIN_KEY"
+#
+# ------------------------------------------------------------
+
+def get_awekas_api_key():
+
+    try:
+        return st.secrets["awekas"]["api_key"]
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_awekas_station(station_id):
+
+    api_key = get_awekas_api_key()
+
+    if not api_key:
+        return None
+
+    # Die AWEKAS Current API liefert die aktuellen
+    # Werte für den Account/API-Key.
+    #
+    # Für den finalen Betrieb müssen die drei
+    # gewünschten AWEKAS-Stationen ihrem jeweiligen
+    # Datenzugang zugeordnet werden.
+
+    r = requests.get(
+        "https://api.awekas.at/current.php",
+        params={
+            "key": api_key,
+            "lng": "de",
+        },
+        timeout=15,
+    )
+
+    r.raise_for_status()
+
+    data = r.json()
+
+    if data.get("error"):
+        return None
+
+    current = data.get("current", {})
+
+    if not current:
+        return None
+
+    return {
+        "windspeed": current.get("windspeed"),
+        "gustspeed": current.get("gustspeed"),
+        "winddirection": current.get("winddirection"),
+        "timestamp": current.get("datatimestamp"),
+    }
+
+
+# ------------------------------------------------------------
+# AGS / KLIMABOJE
+# ------------------------------------------------------------
+
+def fetch_ags_station():
+
+    try:
+
+        act = fetch_boje_act()
+
+        if not act:
+            return None
+
+        speed_ms = act.get("windspeed_ms")
+        gust_ms = act.get("wind_speed_max")
+        direction = act.get("wind_dir_avg")
+
+        if speed_ms is None:
+            speed_ms = act.get("windspeed")
+
+        if gust_ms is None:
+            gust_ms = act.get("gustspeed")
+
+        if direction is None:
+            direction = act.get("wind_dir")
+
+        if speed_ms is None:
+            return None
+
+        return {
+            "speed": ms_to_kt(speed_ms),
+            "gust": ms_to_kt(gust_ms),
+            "direction": direction,
+            "timestamp": time.time(),
+        }
+
+    except Exception:
+
+        return None
+
+
+# ------------------------------------------------------------
+# LIVE-STATIONSDATEN
+# ------------------------------------------------------------
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_live_stations():
+
+    rows = []
+
+    # ----------------------------------------
+    # AGS
+    # ----------------------------------------
+
+    ags = fetch_ags_station()
+
+    if ags:
+
+        station = TRAUNSEE_STATIONS["AGS Gmunden"]
+
+        rows.append({
+            "station": "AGS Gmunden",
+            "lat": station["lat"],
+            "lon": station["lon"],
+            "speed": ags["speed"],
+            "gust": ags["gust"],
+            "direction": ags["direction"],
+            "timestamp": ags["timestamp"],
+            "source": "Klimaboje",
+        })
+
+
+    # ----------------------------------------
+    # AWEKAS
+    # ----------------------------------------
+
+    for station_name in [
+        "Bräuwiese",
+        "Altmünster / Nachdemsee",
+        "Traunkirchen Ort",
+    ]:
+
+        station = TRAUNSEE_STATIONS[station_name]
+
+        station_id = station.get("awekas_id")
+
+        if not station_id:
+            continue
+
+        try:
+
+            data = fetch_awekas_station(
+                station_id
+            )
+
+            if not data:
+                continue
+
+            rows.append({
+                "station": station_name,
+                "lat": station["lat"],
+                "lon": station["lon"],
+                "speed": kmh_to_kt(
+                    data["windspeed"]
+                ),
+                "gust": kmh_to_kt(
+                    data["gustspeed"]
+                ),
+                "direction":
+                    data["winddirection"],
+                "timestamp":
+                    data["timestamp"],
+                "source": "AWEKAS",
+            })
+
+        except Exception:
+            pass
+
+
+    # --------------------------------------------------------
+    # WICHTIG:
+    #
+    # SALT + SCT werden bewusst als eigene Adapter vorbereitet.
+    # Sobald deren direkte Live-JSON/API-Endpunkte identifiziert
+    # sind, werden hier dieselben drei Werte eingesetzt:
+    #
+    # speed
+    # gust
+    # direction
+    #
+    # Dadurch muss am eigentlichen Windmodell nichts geändert
+    # werden.
+    # --------------------------------------------------------
+
+    return pd.DataFrame(rows)
+
+
+# ------------------------------------------------------------
+# IDW INTERPOLATION
+# ------------------------------------------------------------
+#
+# Für die reine Messdatenkarte.
+#
+# Wir interpolieren U/V und nicht Richtung/Geschwindigkeit
+# separat.
+# ------------------------------------------------------------
+
+def idw_interpolate(
+    station_df,
+    grid_lat,
+    grid_lon,
+    value_columns=("u", "v"),
+    power=2.0,
+):
+
+    result = {}
+
+    for value_col in value_columns:
+
+        values = []
+
+        for lat, lon in zip(
+            grid_lat.flatten(),
+            grid_lon.flatten()
+        ):
+
+            distances = []
+
+            for _, row in station_df.iterrows():
+
+                # einfache lokale Distanzmetrik
+                dx = (
+                    (lon - row["lon"]) *
+                    np.cos(np.radians(lat))
+                )
+
+                dy = lat - row["lat"]
+
+                d = np.sqrt(
+                    dx ** 2 +
+                    dy ** 2
+                )
+
+                distances.append(
+                    max(d, 0.0001)
+                )
+
+            distances = np.array(distances)
+
+            weights = 1 / (
+                distances ** power
+            )
+
+            vals = station_df[value_col].values
+
+            values.append(
+                np.sum(weights * vals) /
+                np.sum(weights)
+            )
+
+        result[value_col] = np.array(values)
+
+    return result
+
+
+# ------------------------------------------------------------
+# MESSDATEN -> U/V
+# ------------------------------------------------------------
+
+def prepare_station_vectors(stations_df):
+
+    df = stations_df.copy()
+
+    df = df.dropna(
+        subset=["speed", "direction"]
+    )
+
+    if df.empty:
+        return df
+
+    u, v = wind_to_uv(
+        df["speed"].values,
+        df["direction"].values
+    )
+
+    df["u"] = u
+    df["v"] = v
+
+    # Für die Böen verwenden wir keine Richtungsinterpolation.
+    # Stattdessen wird die Böe räumlich interpoliert.
+    df["gust"] = df["gust"].fillna(
+        df["speed"]
+    )
+
+    return df
+
+
+# ------------------------------------------------------------
+# AROME-REFERENZ AN STATIONSPUNKTEN
+# ------------------------------------------------------------
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_arome_at_points(points):
+
+    rows = []
+
+    for point in points:
+
+        try:
+
+            r = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": point["lat"],
+                    "longitude": point["lon"],
+                    "hourly":
+                        "wind_speed_10m,"
+                        "wind_gusts_10m,"
+                        "wind_direction_10m",
+                    "models": AROME_MODEL_ID,
+                    "forecast_days": 1,
+                    "timezone": "Europe/Vienna",
+                },
+                timeout=15,
+            )
+
+            r.raise_for_status()
+
+            data = r.json()["hourly"]
+
+            speed = data["wind_speed_10m"][0]
+            gust = data["wind_gusts_10m"][0]
+            direction = data["wind_direction_10m"][0]
+
+            u, v = wind_to_uv(
+                kmh_to_kt(speed),
+                direction
+            )
+
+            rows.append({
+                "station": point["station"],
+                "lat": point["lat"],
+                "lon": point["lon"],
+                "arome_speed": kmh_to_kt(speed),
+                "arome_gust": kmh_to_kt(gust),
+                "arome_direction": direction,
+                "arome_u": u,
+                "arome_v": v,
+            })
+
+        except Exception:
+
+            rows.append({
+                "station": point["station"],
+                "lat": point["lat"],
+                "lon": point["lon"],
+                "arome_speed": np.nan,
+                "arome_gust": np.nan,
+                "arome_direction": np.nan,
+                "arome_u": np.nan,
+                "arome_v": np.nan,
+            })
+
+    return pd.DataFrame(rows)
+
+
+# ------------------------------------------------------------
+# WINDMODELL
+# ------------------------------------------------------------
+
+def build_wind_model(
+    live_df,
+    arome_df,
+    mode
+):
+
+    grid_lat, grid_lon = create_grid()
+
+    # --------------------------------------------------------
+    # MODELL: AROME
+    # --------------------------------------------------------
+
+    if mode == "AROME":
+
+        out = arome_df.copy()
+
+        out["u"], out["v"] = wind_to_uv(
+            out["speed"],
+            out["direction"]
+        )
+
+        return out, grid_lat, grid_lon
+
+
+    # --------------------------------------------------------
+    # MESSDATEN
+    # --------------------------------------------------------
+
+    stations = prepare_station_vectors(
+        live_df
+    )
+
+    if stations.empty:
+
+        return (
+            pd.DataFrame(),
+            grid_lat,
+            grid_lon
+        )
+
+
+    interp = idw_interpolate(
+        stations,
+        grid_lat,
+        grid_lon,
+        value_columns=("u", "v", "gust")
+    )
+
+    u = interp["u"]
+    v = interp["v"]
+    gust = interp["gust"]
+
+
+    # --------------------------------------------------------
+    # NUR MESSDATEN
+    # --------------------------------------------------------
+
+    if mode == "Nur Messdaten":
+
+        speed, direction = uv_to_wind(
+            u,
+            v
+        )
+
+        out = pd.DataFrame({
+            "lat": grid_lat.flatten(),
+            "lon": grid_lon.flatten(),
+            "speed": speed,
+            "gust": gust,
+            "direction": direction,
+        })
+
+        return out, grid_lat, grid_lon
+
+
+    # --------------------------------------------------------
+    # AROME + MESSDATEN
+    # --------------------------------------------------------
+
+    # AROME an den Stationspunkten
+    arome_station = fetch_arome_at_points(
+        stations[
+            ["station", "lat", "lon"]
+        ].to_dict("records")
+    )
+
+    merged = stations.merge(
+        arome_station,
+        on=["station", "lat", "lon"],
+        how="left"
+    )
+
+    merged = merged.dropna(
+        subset=[
+            "arome_u",
+            "arome_v"
+        ]
+    )
+
+    if merged.empty:
+
+        speed, direction = uv_to_wind(
+            u,
+            v
+        )
+
+        out = pd.DataFrame({
+            "lat": grid_lat.flatten(),
+            "lon": grid_lon.flatten(),
+            "speed": speed,
+            "gust": gust,
+            "direction": direction,
+        })
+
+        return out, grid_lat, grid_lon
+
+
+    # --------------------------------------------------------
+    # RESIDUAL
+    # --------------------------------------------------------
+
+    # Beobachtung - AROME
+    merged["du"] = (
+        merged["u"] -
+        merged["arome_u"]
+    )
+
+    merged["dv"] = (
+        merged["v"] -
+        merged["arome_v"]
+    )
+
+    merged["dgust"] = (
+        merged["gust"] -
+        merged["arome_gust"]
+    )
+
+
+    # Residual-Feld interpolieren
+    residual = idw_interpolate(
+        merged,
+        grid_lat,
+        grid_lon,
+        value_columns=(
+            "du",
+            "dv",
+            "dgust"
+        )
+    )
+
+
+    # AROME-Grid in DataFrame
+    ar = arome_df.copy()
+
+    ar["u"], ar["v"] = wind_to_uv(
+        ar["speed"],
+        ar["direction"]
+    )
+
+
+    # korrigiertes AROME-Feld
+    final_u = (
+        ar["u"].values +
+        residual["du"]
+    )
+
+    final_v = (
+        ar["v"].values +
+        residual["dv"]
+    )
+
+    final_gust = (
+        ar["gust"].values +
+        residual["dgust"]
+    )
+
+    final_gust = np.maximum(
+        final_gust,
+        0
+    )
+
+    final_speed, final_direction = uv_to_wind(
+        final_u,
+        final_v
+    )
+
+    out = pd.DataFrame({
+        "lat": ar["lat"].values,
+        "lon": ar["lon"].values,
+        "speed": final_speed,
+        "gust": final_gust,
+        "direction": final_direction,
+    })
+
+    return (
+        out,
+        grid_lat,
+        grid_lon
+    )
+
+
+# ------------------------------------------------------------
+# WIND-FARBSCALA
+# ------------------------------------------------------------
+
+def wind_color(speed):
+
+    if speed < 2:
+        return "#d7f7ff"
+
+    if speed < 5:
+        return "#7dd3fc"
+
+    if speed < 8:
+        return "#38bdf8"
+
+    if speed < 12:
+        return "#22c55e"
+
+    if speed < 16:
+        return "#facc15"
+
+    if speed < 20:
+        return "#fb923c"
+
+    if speed < 25:
+        return "#ef4444"
+
+    return "#b91c1c"
+
+
+# ------------------------------------------------------------
+# WINDPARTIKEL ALS SVG
+# ------------------------------------------------------------
+
+def arrow_svg(direction, speed):
+
+    # Kartenpfeil zeigt in die Bewegungsrichtung.
+    # Meteorologische Richtung = kommt AUS dieser Richtung.
+    angle = (direction + 180) % 360
+
+    length = 18 + min(speed, 30) * 0.8
+
+    x2 = 25 + length * np.sin(
+        np.radians(angle)
+    )
+
+    y2 = 25 - length * np.cos(
+        np.radians(angle)
+    )
+
+    return f"""
+    <svg width="50" height="50"
+         viewBox="0 0 50 50"
+         xmlns="http://www.w3.org/2000/svg">
+
+        <line
+            x1="25"
+            y1="25"
+            x2="{x2:.1f}"
+            y2="{y2:.1f}"
+            stroke="{wind_color(speed)}"
+            stroke-width="3"
+            stroke-linecap="round"
+        />
+
+        <circle
+            cx="25"
+            cy="25"
+            r="3.5"
+            fill="{wind_color(speed)}"
+        />
+
+    </svg>
+    """
+
+
+# ------------------------------------------------------------
+# FOLIUM-KARTE
+# ------------------------------------------------------------
+
+def render_wind_map(
+    wind_df,
+    live_df,
+    mode
+):
+
+    m = folium.Map(
+        location=TRAUNSEE_CENTER,
+        zoom_start=12,
+        tiles="CartoDB positron",
+        control_scale=True,
+    )
+
+
+    # --------------------------------------------------------
+    # WIND-FELD
+    # --------------------------------------------------------
+
+    if not wind_df.empty:
+
+        # jedes Rasterfeld als Kreis
+        # Farbe = Grundwind
+        # Popup = Geschwindigkeit/Böe/Richtung
+
+        for _, row in wind_df.iterrows():
+
+            speed = row["speed"]
+
+            if pd.isna(speed):
+                continue
+
+            folium.CircleMarker(
+                location=[
+                    row["lat"],
+                    row["lon"]
+                ],
+
+                radius=8,
+
+                color=wind_color(speed),
+
+                fill=True,
+
+                fill_color=wind_color(speed),
+
+                fill_opacity=0.25,
+
+                opacity=0.0,
+
+                tooltip=(
+                    f"{speed:.1f} kt"
+                    f" · Böe {row['gust']:.1f} kt"
+                    f" · {row['direction']:.0f}°"
+                ),
+            ).add_to(m)
+
+
+    # --------------------------------------------------------
+    # WINDPFEILE
+    # --------------------------------------------------------
+
+    if not wind_df.empty:
+
+        arrow_step = max(
+            1,
+            int(len(wind_df) / 80)
+        )
+
+        for _, row in wind_df.iloc[
+            ::arrow_step
+        ].iterrows():
+
+            speed = row["speed"]
+
+            if pd.isna(speed):
+                continue
+
+            html = arrow_svg(
+                row["direction"],
+                speed
+            )
+
+            folium.Marker(
+                location=[
+                    row["lat"],
+                    row["lon"]
+                ],
+
+                icon=folium.DivIcon(
+                    html=html,
+                    icon_size=(50, 50),
+                    icon_anchor=(25, 25),
+                ),
+
+                tooltip=(
+                    f"Wind {speed:.1f} kt"
+                    f" · Böe {row['gust']:.1f} kt"
+                    f" · {row['direction']:.0f}°"
+                ),
+
+            ).add_to(m)
+
+
+    # --------------------------------------------------------
+    # MESSSTATIONEN
+    # --------------------------------------------------------
+
+    if not live_df.empty:
+
+        for _, row in live_df.iterrows():
+
+            speed_text = (
+                f"{row['speed']:.1f} kt"
+                if pd.notna(row["speed"])
+                else "—"
+            )
+
+            gust_text = (
+                f"{row['gust']:.1f} kt"
+                if pd.notna(row["gust"])
+                else "—"
+            )
+
+            dir_text = (
+                f"{row['direction']:.0f}°"
+                if pd.notna(row["direction"])
+                else "—"
+            )
+
+            popup_html = f"""
+            <div style="
+                font-family:Arial;
+                min-width:190px;
+            ">
+
+                <b>{row['station']}</b><br><br>
+
+                Grundwind:
+                <b>{speed_text}</b><br>
+
+                Böe:
+                <b>{gust_text}</b><br>
+
+                Richtung:
+                <b>{dir_text}</b><br>
+
+                Quelle:
+                {row['source']}
+
+            </div>
+            """
+
+            folium.CircleMarker(
+                location=[
+                    row["lat"],
+                    row["lon"]
+                ],
+
+                radius=6,
+
+                color="#111827",
+
+                weight=2,
+
+                fill=True,
+
+                fill_color=(
+                    wind_color(
+                        row["speed"]
+                    )
+                    if pd.notna(row["speed"])
+                    else "#ffffff"
+                ),
+
+                fill_opacity=1,
+
+                popup=folium.Popup(
+                    popup_html,
+                    max_width=260
+                ),
+
+                tooltip=row["station"],
+
+            ).add_to(m)
+
+
+    # --------------------------------------------------------
+    # TRAUNSEE MARKIEREN
+    # --------------------------------------------------------
+
+    folium.GeoJson(
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[
+                            [13.67, 47.80],
+                            [13.88, 47.80],
+                            [13.88, 47.93],
+                            [13.67, 47.93],
+                            [13.67, 47.80],
+                        ]]
+                    },
+                    "properties": {},
+                }
+            ]
+        },
+
+        style_function=lambda feature: {
+            "fillOpacity": 0,
+            "color": "#334155",
+            "weight": 1,
+        },
+
+    ).add_to(m)
+
+
+    # --------------------------------------------------------
+    # LEGENDE
+    # --------------------------------------------------------
+
+    legend = """
+    <div style="
+        position: fixed;
+        bottom: 30px;
+        left: 30px;
+        z-index:9999;
+
+        background:white;
+
+        padding:10px 14px;
+
+        border-radius:8px;
+
+        box-shadow:
+            0 2px 12px rgba(0,0,0,.18);
+
+        font-family:Arial;
+        font-size:12px;
+    ">
+
+        <b>Wind [kt]</b><br>
+
+        <span style="color:#38bdf8">●</span>
+        5–8<br>
+
+        <span style="color:#22c55e">●</span>
+        8–12<br>
+
+        <span style="color:#facc15">●</span>
+        12–16<br>
+
+        <span style="color:#fb923c">●</span>
+        16–20<br>
+
+        <span style="color:#ef4444">●</span>
+        20–25<br>
+
+        <span style="color:#b91c1c">●</span>
+        >25
+
+    </div>
+    """
+
+    m.get_root().html.add_child(
+        folium.Element(legend)
+    )
+
+    return m
+
+
+# ============================================================
+# UI
+# ============================================================
+
+st.markdown(
+    '<div class="section-title">'
+    'Traunsee — LIVE WINDMODELL'
+    '</div>',
+    unsafe_allow_html=True
+)
+
+
+map_col, info_col = st.columns(
+    [5, 1]
+)
+
+
+with map_col:
+
+    model_mode = st.radio(
+        "Windmodell",
+        [
+            "Nur Messdaten",
+            "AROME",
+            "AROME + Messdaten",
+        ],
+        horizontal=True,
+    )
+
+
+with info_col:
+
+    st.caption(
+        "Live-Update"
+    )
+
+    st.metric(
+        "Intervall",
+        f"{LIVE_REFRESH_SECONDS} s"
+    )
+
+
+# ------------------------------------------------------------
+# DATEN HOLEN
+# ------------------------------------------------------------
+
+try:
+
+    with st.spinner(
+        "Windmodell wird berechnet …"
+    ):
+
+        live_stations = (
+            fetch_live_stations()
+        )
+
+        if model_mode == "AROME":
+
+            arome_grid_raw = (
+                fetch_arome_grid()
+            )
+
+            wind_model = (
+                arome_grid_raw.copy()
+            )
+
+        else:
+
+            arome_grid_raw = (
+                fetch_arome_grid()
+            )
+
+            wind_model, _, _ = (
+                build_wind_model(
+                    live_stations,
+                    arome_grid_raw,
+                    model_mode
+                )
+            )
+
+
+    # --------------------------------------------------------
+    # KARTE
+    # --------------------------------------------------------
+
+    wind_map = render_wind_map(
+        wind_model,
+        live_stations,
+        model_mode
+    )
+
+    st.components.v1.html(
+        wind_map.get_root().render(),
+        height=760,
+        scrolling=False,
+    )
+
+
+except Exception as e:
+
+    st.error(
+        f"Windmodell konnte nicht "
+        f"berechnet werden: {e}"
+    )
+
+
+# ------------------------------------------------------------
+# AKTUELLE STATIONSWERTE
+# ------------------------------------------------------------
+
+if (
+    'live_stations' in locals()
+    and not live_stations.empty
+):
+
+    st.markdown(
+        '<div class="section-title">'
+        'Aktuelle Messstationen'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    display_df = (
+        live_stations[
+            [
+                "station",
+                "source",
+                "speed",
+                "gust",
+                "direction",
+            ]
+        ]
+        .copy()
+    )
+
+    display_df = display_df.rename(
+        columns={
+            "station": "Station",
+            "source": "Quelle",
+            "speed": "Grundwind [kt]",
+            "gust": "Böe [kt]",
+            "direction": "Richtung [°]",
+        }
+    )
+
+    display_df["Grundwind [kt]"] = (
+        display_df["Grundwind [kt]"]
+        .round(1)
+    )
+
+    display_df["Böe [kt]"] = (
+        display_df["Böe [kt]"]
+        .round(1)
+    )
+
+    display_df["Richtung [°]"] = (
+        display_df["Richtung [°]"]
+        .round(0)
+    )
+
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ------------------------------------------------------------
+# AUTO REFRESH
+# ------------------------------------------------------------
+
+st.markdown(
+    f"""
+    <script>
+        setTimeout(function() {{
+            window.parent.location.reload();
+        }}, {LIVE_REFRESH_SECONDS * 1000});
+    </script>
+    """,
+    unsafe_allow_html=True
+)
  
