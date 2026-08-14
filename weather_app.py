@@ -779,44 +779,39 @@ st.components.v1.iframe(
 )
 
 
+
 # ======================
-# Modellvergleich (Open-Meteo) — Gmunden
+# Modellvergleich (Open-Meteo) — Gmunden: Wind
 # ======================
 # Weg 3 aus der Recherche: echte Vorhersagedaten mehrerer Wettermodelle
 # (inkl. ECMWF, das bei Windys Point Forecast API nicht enthalten ist)
 # nebeneinander plotten. Kostenlos, kein API-Key nötig.
-
-st.markdown('<div class="section-title">Modellvergleich — Gmunden</div>', unsafe_allow_html=True)
-
+# Hinweis: der Pfeil-Marker "arrow" braucht plotly>=5.15.
+ 
+st.markdown('<div class="section-title">Modellvergleich — Gmunden (Wind)</div>', unsafe_allow_html=True)
+ 
 COMPARE_MODELS = {
-    "ECMWF IFS": "ecmwf_ifs025",
-    "GFS (NOAA)": "gfs_seamless",
-    "ICON (DWD)": "icon_seamless",
     "AROME (GeoSphere AT)": "geosphere_arome_austria",
-    "GEM (Kanada)": "gem_seamless",
-    "ARPEGE/AROME (Météo-France)": "meteofrance_seamless",
-    "UK Met Office": "ukmo_seamless",
+    "ICON (DWD)": "icon_seamless",
+    "ECMWF IFS": "ecmwf_ifs025",
 }
-
-COMPARE_VARIABLES = {
-    "Temperatur (2 m)": "temperature_2m",
-    "Niederschlag": "precipitation",
-    "Windgeschwindigkeit (10 m)": "wind_speed_10m",
-    "Bewölkung": "cloud_cover",
-    "Luftdruck (Meereshöhe)": "pressure_msl",
+COMPARE_COLORS = {
+    "AROME (GeoSphere AT)": "#e07a2a",
+    "ICON (DWD)": "#1a9de0",
+    "ECMWF IFS": "#2e9e5b",
 }
-
+ 
 GMUNDEN_LAT, GMUNDEN_LON = COORDS["Gmunden"]
-
-
+ 
+ 
 @st.cache_data(ttl=1800, show_spinner=False)
-def hole_modellvergleich(lat: float, lon: float, variable: str, model_ids: tuple, tage: int):
+def hole_wind_vergleich(lat: float, lon: float, model_ids: tuple, tage: int):
     r = requests.get(
         "https://api.open-meteo.com/v1/forecast",
         params={
             "latitude": lat,
             "longitude": lon,
-            "hourly": variable,
+            "hourly": "wind_speed_10m,wind_direction_10m",
             "models": ",".join(model_ids),
             "forecast_days": tage,
             "timezone": "Europe/Vienna",
@@ -825,68 +820,94 @@ def hole_modellvergleich(lat: float, lon: float, variable: str, model_ids: tuple
     )
     r.raise_for_status()
     return r.json()
-
-
-col_cmp1, col_cmp2 = st.columns([2, 1])
+ 
+ 
+col_cmp1, col_cmp2 = st.columns(2)
 with col_cmp1:
-    vergleich_modelle = st.multiselect(
-        "Modelle",
-        list(COMPARE_MODELS.keys()),
-        default=["ECMWF IFS", "GFS (NOAA)", "ICON (DWD)", "AROME (GeoSphere AT)"],
-        key="vergleich_modelle",
-    )
-with col_cmp2:
     vergleich_tage = st.slider("Tage", 1, 16, 5, key="vergleich_tage")
-
-vergleich_var_label = st.selectbox("Variable", list(COMPARE_VARIABLES.keys()), key="vergleich_var")
-vergleich_var = COMPARE_VARIABLES[vergleich_var_label]
-
-if not vergleich_modelle:
-    st.info("Bitte mindestens ein Modell auswählen.")
-else:
-    model_ids = tuple(COMPARE_MODELS[m] for m in vergleich_modelle)
-    try:
-        cmp_data = hole_modellvergleich(GMUNDEN_LAT, GMUNDEN_LON, vergleich_var, model_ids, vergleich_tage)
-        cmp_zeit = pd.to_datetime(cmp_data["hourly"]["time"])
-
-        fig_cmp = go.Figure()
-        fehlende_modelle = []
-        for label, model_id in zip(vergleich_modelle, model_ids):
-            # Bei mehreren Modellen hängt Open-Meteo den Modellnamen an den
-            # Variablennamen an, z.B. "temperature_2m_icon_seamless".
-            key = f"{vergleich_var}_{model_id}" if len(model_ids) > 1 else vergleich_var
-            werte = cmp_data["hourly"].get(key)
-            if werte is None:
-                fehlende_modelle.append(label)
-                continue
-            fig_cmp.add_trace(go.Scatter(x=cmp_zeit, y=werte, mode="lines", name=label, line=dict(width=2)))
-
-        if fehlende_modelle:
-            st.info("Keine Daten für: " + ", ".join(fehlende_modelle))
-
-        einheit = cmp_data["hourly_units"].get(vergleich_var, "")
-        fig_cmp.update_layout(
-            xaxis_title="Zeit",
-            yaxis_title=f"{vergleich_var_label} ({einheit})",
-            hovermode="x unified",
-            legend=dict(orientation="h", y=-0.2),
-            margin=dict(t=20, b=50),
-            plot_bgcolor="rgba(255,255,255,0.5)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="IBM Plex Sans"),
-            height=380,
+with col_cmp2:
+    pfeil_intervall = st.slider("Pfeilabstand (Stunden)", 1, 12, 3, key="pfeil_intervall")
+ 
+model_ids = tuple(COMPARE_MODELS.values())
+ 
+try:
+    cmp_data = hole_wind_vergleich(GMUNDEN_LAT, GMUNDEN_LON, model_ids, vergleich_tage)
+    cmp_zeit = pd.to_datetime(cmp_data["hourly"]["time"])
+ 
+    fig_cmp = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.65, 0.35], vertical_spacing=0.06,
+    )
+ 
+    anzahl_modelle = len(COMPARE_MODELS)
+    for i, (label, model_id) in enumerate(COMPARE_MODELS.items()):
+        farbe = COMPARE_COLORS[label]
+        speed = cmp_data["hourly"].get(f"wind_speed_10m_{model_id}")
+        richtung = cmp_data["hourly"].get(f"wind_direction_10m_{model_id}")
+ 
+        if speed is None or richtung is None:
+            st.info(f"Keine Winddaten für {label}.")
+            continue
+ 
+        speed_kt = [v / 1.852 if v is not None else None for v in speed]
+ 
+        # Windstärke (oben)
+        fig_cmp.add_trace(
+            go.Scatter(x=cmp_zeit, y=speed_kt, mode="lines", name=label,
+                       line=dict(color=farbe, width=2)),
+            row=1, col=1,
         )
-        fig_cmp.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
-        fig_cmp.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)")
-        st.plotly_chart(fig_cmp, use_container_width=True, config=PLOTLY_CONFIG)
-
-        with st.expander("Rohdaten"):
-            df_cmp = pd.DataFrame({"Zeit": cmp_zeit})
-            for label, model_id in zip(vergleich_modelle, model_ids):
-                key = f"{vergleich_var}_{model_id}" if len(model_ids) > 1 else vergleich_var
-                if key in cmp_data["hourly"]:
-                    df_cmp[label] = cmp_data["hourly"][key]
-            st.dataframe(df_cmp, use_container_width=True)
-
-    except requests.exceptions.RequestException as e:
-        st.warning(f"⚠️ Modellvergleich nicht erreichbar: {e}")
+ 
+        # Windrichtung als Pfeile (unten), eine Zeile pro Modell.
+        # Der Pfeil zeigt in die Richtung, in die der Wind weht — daher +180°
+        # gegenüber der meteorologischen "kommt von"-Richtung von Open-Meteo.
+        idx = [
+            j for j in range(0, len(cmp_zeit), pfeil_intervall)
+            if speed[j] is not None and richtung[j] is not None
+        ]
+        pfeil_zeit = [cmp_zeit[j] for j in idx]
+        pfeil_winkel = [(richtung[j] + 180) % 360 for j in idx]
+        pfeil_y = [anzahl_modelle - i] * len(idx)
+        pfeil_text = [
+            f"{label}<br>{cmp_zeit[j]:%d.%m. %H:%M}<br>{speed_kt[j]:.1f} kt aus {richtung[j]:.0f}°"
+            for j in idx
+        ]
+ 
+        fig_cmp.add_trace(
+            go.Scatter(
+                x=pfeil_zeit, y=pfeil_y, mode="markers", name=label, showlegend=False,
+                marker=dict(symbol="arrow", size=13, angle=pfeil_winkel, color=farbe, line=dict(width=0)),
+                hoverinfo="text", text=pfeil_text,
+            ),
+            row=2, col=1,
+        )
+ 
+    fig_cmp.update_yaxes(
+        title_text="Wind (kt)", row=1, col=1,
+        showgrid=True, gridcolor="rgba(0,0,0,0.05)", fixedrange=True,
+    )
+    fig_cmp.update_yaxes(
+        row=2, col=1,
+        tickmode="array",
+        tickvals=list(range(1, anzahl_modelle + 1)),
+        ticktext=list(COMPARE_MODELS.keys())[::-1],
+        range=[0.5, anzahl_modelle + 0.5],
+        showgrid=False, fixedrange=True,
+    )
+    fig_cmp.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)", row=1, col=1)
+    fig_cmp.update_xaxes(title_text="Zeit", showgrid=True, gridcolor="rgba(0,0,0,0.05)", row=2, col=1)
+    fig_cmp.update_layout(
+        legend=dict(orientation="h", y=-0.12),
+        margin=dict(t=20, b=50),
+        plot_bgcolor="rgba(255,255,255,0.5)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="IBM Plex Sans"),
+        height=520,
+        hovermode="closest",
+        dragmode="zoom",
+    )
+    st.plotly_chart(fig_cmp, use_container_width=True, config=PLOTLY_CONFIG)
+ 
+except requests.exceptions.RequestException as e:
+    st.warning(f"⚠️ Modellvergleich nicht erreichbar: {e}")
+ 
