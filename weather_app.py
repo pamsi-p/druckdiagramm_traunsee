@@ -779,40 +779,32 @@ st.components.v1.iframe(
 )
 
 
-
 # ======================
-# Modellvergleich (Open-Meteo) — Gmunden: Wind
+# AROME — Wind & Böen — Gmunden
 # ======================
-# Weg 3 aus der Recherche: echte Vorhersagedaten mehrerer Wettermodelle
-# (inkl. ECMWF, das bei Windys Point Forecast API nicht enthalten ist)
-# nebeneinander plotten. Kostenlos, kein API-Key nötig.
+# Weg 3 aus der Recherche: Vorhersagedaten des AROME-Modells (GeoSphere Austria)
+# direkt aus Open-Meteo holen. Kostenlos, kein API-Key nötig.
 # Hinweis: der Pfeil-Marker "arrow" braucht plotly>=5.15.
  
-st.markdown('<div class="section-title">Modellvergleich — Gmunden (Wind)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">AROME — Wind &amp; Böen — Gmunden</div>', unsafe_allow_html=True)
  
-COMPARE_MODELS = {
-    "AROME (GeoSphere AT)": "geosphere_arome_austria",
-    "ICON (DWD)": "icon_seamless",
-    "ECMWF IFS": "ecmwf_ifs025",
-}
-COMPARE_COLORS = {
-    "AROME (GeoSphere AT)": "#e07a2a",
-    "ICON (DWD)": "#1a9de0",
-    "ECMWF IFS": "#2e9e5b",
-}
+AROME_MODEL_ID = "geosphere_arome_austria"
+AROME_FARBE_WIND = "#e07a2a"
+AROME_FARBE_BOEN = "#c43d1a"
+PFEIL_INTERVALL = 1  # Stunden, fix
  
 GMUNDEN_LAT, GMUNDEN_LON = COORDS["Gmunden"]
  
  
 @st.cache_data(ttl=1800, show_spinner=False)
-def hole_wind_vergleich(lat: float, lon: float, model_ids: tuple, start: date, end: date):
+def hole_arome_wind(lat: float, lon: float, start: date, end: date):
     r = requests.get(
         "https://api.open-meteo.com/v1/forecast",
         params={
             "latitude": lat,
             "longitude": lon,
-            "hourly": "wind_speed_10m,wind_direction_10m",
-            "models": ",".join(model_ids),
+            "hourly": "wind_speed_10m,wind_gusts_10m,wind_direction_10m",
+            "models": AROME_MODEL_ID,
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
             "timezone": "Europe/Vienna",
@@ -823,90 +815,84 @@ def hole_wind_vergleich(lat: float, lon: float, model_ids: tuple, start: date, e
     return r.json()
  
  
-# Nutzt denselben Zeitraum (start_date/end_date), der ganz oben auf der Seite
-# eingestellt wurde — kein eigener Tage-Regler mehr nötig.
-pfeil_intervall = st.slider("Pfeilabstand (Stunden)", 1, 12, 3, key="pfeil_intervall")
- 
-model_ids = tuple(COMPARE_MODELS.values())
- 
 try:
-    cmp_data = hole_wind_vergleich(GMUNDEN_LAT, GMUNDEN_LON, model_ids, start_date, end_date)
-    cmp_zeit = pd.to_datetime(cmp_data["hourly"]["time"])
+    # Nutzt denselben Zeitraum (start_date/end_date), der ganz oben auf der
+    # Seite eingestellt wurde.
+    arome_data = hole_arome_wind(GMUNDEN_LAT, GMUNDEN_LON, start_date, end_date)
+    arome_zeit = pd.to_datetime(arome_data["hourly"]["time"])
  
-    fig_cmp = make_subplots(
-        rows=2, cols=1, shared_xaxes=True,
-        row_heights=[0.65, 0.35], vertical_spacing=0.06,
-    )
+    speed = arome_data["hourly"].get("wind_speed_10m")
+    boen = arome_data["hourly"].get("wind_gusts_10m")
+    richtung = arome_data["hourly"].get("wind_direction_10m")
  
-    anzahl_modelle = len(COMPARE_MODELS)
-    for i, (label, model_id) in enumerate(COMPARE_MODELS.items()):
-        farbe = COMPARE_COLORS[label]
-        speed = cmp_data["hourly"].get(f"wind_speed_10m_{model_id}")
-        richtung = cmp_data["hourly"].get(f"wind_direction_10m_{model_id}")
- 
-        if speed is None or richtung is None:
-            st.info(f"Keine Winddaten für {label}.")
-            continue
- 
+    if speed is None or boen is None or richtung is None:
+        st.info("Keine AROME-Winddaten für diesen Zeitraum verfügbar.")
+    else:
         speed_kt = [v / 1.852 if v is not None else None for v in speed]
+        boen_kt = [v / 1.852 if v is not None else None for v in boen]
  
-        # Windstärke (oben)
-        fig_cmp.add_trace(
-            go.Scatter(x=cmp_zeit, y=speed_kt, mode="lines", name=label,
-                       line=dict(color=farbe, width=2)),
+        fig_arome = make_subplots(
+            rows=2, cols=1, shared_xaxes=True,
+            row_heights=[0.7, 0.3], vertical_spacing=0.08,
+        )
+ 
+        fig_arome.add_trace(
+            go.Scatter(x=arome_zeit, y=speed_kt, mode="lines", name="Wind",
+                       line=dict(color=AROME_FARBE_WIND, width=2.5),
+                       fill="tozeroy", fillcolor="rgba(224,122,42,0.08)"),
+            row=1, col=1,
+        )
+        fig_arome.add_trace(
+            go.Scatter(x=arome_zeit, y=boen_kt, mode="lines", name="Böen",
+                       line=dict(color=AROME_FARBE_BOEN, width=1.8, dash="dot")),
             row=1, col=1,
         )
  
-        # Windrichtung als Pfeile (unten), eine Zeile pro Modell.
-        # Der Pfeil zeigt in die Richtung, in die der Wind weht — daher +180°
-        # gegenüber der meteorologischen "kommt von"-Richtung von Open-Meteo.
+        # Windrichtung als Pfeile. Der Pfeil zeigt in die Richtung, in die
+        # der Wind weht — daher +180° gegenüber der meteorologischen
+        # "kommt von"-Richtung von Open-Meteo.
         idx = [
-            j for j in range(0, len(cmp_zeit), pfeil_intervall)
+            j for j in range(0, len(arome_zeit), PFEIL_INTERVALL)
             if speed[j] is not None and richtung[j] is not None
         ]
-        pfeil_zeit = [cmp_zeit[j] for j in idx]
+        pfeil_zeit = [arome_zeit[j] for j in idx]
         pfeil_winkel = [(richtung[j] + 180) % 360 for j in idx]
-        pfeil_y = [anzahl_modelle - i] * len(idx)
         pfeil_text = [
-            f"{label}<br>{cmp_zeit[j]:%d.%m. %H:%M}<br>{speed_kt[j]:.1f} kt aus {richtung[j]:.0f}°"
+            f"{arome_zeit[j]:%d.%m. %H:%M}<br>{speed_kt[j]:.1f} kt aus {richtung[j]:.0f}°"
             for j in idx
         ]
  
-        fig_cmp.add_trace(
+        fig_arome.add_trace(
             go.Scatter(
-                x=pfeil_zeit, y=pfeil_y, mode="markers", name=label, showlegend=False,
-                marker=dict(symbol="arrow", size=13, angle=pfeil_winkel, color=farbe, line=dict(width=0)),
+                x=pfeil_zeit, y=[1] * len(idx), mode="markers", name="Richtung", showlegend=False,
+                marker=dict(symbol="arrow", size=13, angle=pfeil_winkel,
+                           color=AROME_FARBE_WIND, line=dict(width=0)),
                 hoverinfo="text", text=pfeil_text,
             ),
             row=2, col=1,
         )
  
-    fig_cmp.update_yaxes(
-        title_text="Wind (kt)", row=1, col=1,
-        showgrid=True, gridcolor="rgba(0,0,0,0.05)", fixedrange=True,
-    )
-    fig_cmp.update_yaxes(
-        row=2, col=1,
-        tickmode="array",
-        tickvals=list(range(1, anzahl_modelle + 1)),
-        ticktext=list(COMPARE_MODELS.keys())[::-1],
-        range=[0.5, anzahl_modelle + 0.5],
-        showgrid=False, fixedrange=True,
-    )
-    fig_cmp.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)", row=1, col=1)
-    fig_cmp.update_xaxes(title_text="Zeit", showgrid=True, gridcolor="rgba(0,0,0,0.05)", row=2, col=1)
-    fig_cmp.update_layout(
-        legend=dict(orientation="h", y=-0.12),
-        margin=dict(t=20, b=50),
-        plot_bgcolor="rgba(255,255,255,0.5)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="IBM Plex Sans"),
-        height=520,
-        hovermode="closest",
-        dragmode="zoom",
-    )
-    st.plotly_chart(fig_cmp, use_container_width=True, config=PLOTLY_CONFIG)
+        fig_arome.update_yaxes(
+            title_text="Wind (kt)", row=1, col=1,
+            showgrid=True, gridcolor="rgba(0,0,0,0.05)", fixedrange=True,
+        )
+        fig_arome.update_yaxes(
+            row=2, col=1, showticklabels=False, range=[0.5, 1.5],
+            showgrid=False, fixedrange=True,
+        )
+        fig_arome.update_xaxes(showgrid=True, gridcolor="rgba(0,0,0,0.05)", row=1, col=1)
+        fig_arome.update_xaxes(title_text="Zeit", showgrid=True, gridcolor="rgba(0,0,0,0.05)", row=2, col=1)
+        fig_arome.update_layout(
+            legend=dict(orientation="h", y=-0.15),
+            margin=dict(t=20, b=50),
+            plot_bgcolor="rgba(255,255,255,0.5)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="IBM Plex Sans"),
+            height=420,
+            hovermode="closest",
+            dragmode="zoom",
+        )
+        st.plotly_chart(fig_arome, use_container_width=True, config=PLOTLY_CONFIG)
  
 except requests.exceptions.RequestException as e:
-    st.warning(f"⚠️ Modellvergleich nicht erreichbar: {e}")
- 
+    st.warning(f"⚠️ AROME-Winddaten nicht erreichbar: {e}")
