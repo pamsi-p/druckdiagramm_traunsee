@@ -365,8 +365,9 @@ else:
 # AROME Bilder
 # ======================
 st.markdown('<div class="section-title">AROME — kitewetter.at</div>', unsafe_allow_html=True)
+arome_ts = int(time.time())
 arome_images = [
-    f"https://kitewetter.at/wp-content/arome/arome_tr_run_00_ID_{i:02d}.png"
+    f"https://www.kitewetter.at/wp-content/arome/viewer/windfields/arome/traunsee/arome_tr_run_00_ID_{i:02d}.png?t={arome_ts}"
     for i in range(1, 43)
 ]
 html_scroll = '<div style="display:flex; overflow-x:auto; gap:10px; padding:10px 0 16px 0; scrollbar-width:thin; scrollbar-color:#ccc transparent;">'
@@ -785,17 +786,17 @@ st.components.v1.iframe(
 # Weg 3 aus der Recherche: Vorhersagedaten des AROME-Modells (GeoSphere Austria)
 # direkt aus Open-Meteo holen. Kostenlos, kein API-Key nötig.
 # Hinweis: der Pfeil-Marker "arrow" braucht plotly>=5.15.
- 
+
 st.markdown('<div class="section-title">AROME — Wind &amp; Böen — Gmunden</div>', unsafe_allow_html=True)
- 
+
 AROME_MODEL_ID = "geosphere_arome_austria"
 AROME_FARBE_WIND = "#e07a2a"
 AROME_FARBE_BOEN = "#c43d1a"
 PFEIL_INTERVALL = 1  # Stunden, fix
- 
+
 GMUNDEN_LAT, GMUNDEN_LON = COORDS["Gmunden"]
- 
- 
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def hole_arome_wind(lat: float, lon: float, start: date, end: date):
     r = requests.get(
@@ -813,24 +814,24 @@ def hole_arome_wind(lat: float, lon: float, start: date, end: date):
     )
     r.raise_for_status()
     return r.json()
- 
- 
+
+
 try:
     # Nutzt denselben Zeitraum (start_date/end_date), der ganz oben auf der
     # Seite eingestellt wurde.
     arome_data = hole_arome_wind(GMUNDEN_LAT, GMUNDEN_LON, start_date, end_date)
     arome_zeit = pd.to_datetime(arome_data["hourly"]["time"]).tz_localize("Europe/Vienna")
- 
+
     speed = arome_data["hourly"].get("wind_speed_10m")
     boen = arome_data["hourly"].get("wind_gusts_10m")
     richtung = arome_data["hourly"].get("wind_direction_10m")
- 
+
     if speed is None or boen is None or richtung is None:
         st.info("Keine AROME-Winddaten für diesen Zeitraum verfügbar.")
     else:
         speed_kt = [v / 1.852 if v is not None else None for v in speed]
         boen_kt = [v / 1.852 if v is not None else None for v in boen]
- 
+
         # Heute-Markierung + "Jetzt"-Linie, exakt wie bei Druckgradient und
         # den beiden Windcharts oben (add_now_and_today), nur bezogen auf
         # den AROME-Zeitindex statt auf df.
@@ -848,12 +849,12 @@ try:
                                    xanchor="left", xref="x", yref="paper",
                                    font=dict(color="darkorange", size=11))
             return fig
- 
+
         fig_arome = make_subplots(
             rows=2, cols=1, shared_xaxes=True,
             row_heights=[0.7, 0.3], vertical_spacing=0.08,
         )
- 
+
         fig_arome.add_trace(
             go.Scatter(x=arome_zeit, y=speed_kt, mode="lines", name="Wind",
                        line=dict(color=AROME_FARBE_WIND, width=2.5),
@@ -865,7 +866,7 @@ try:
                        line=dict(color=AROME_FARBE_BOEN, width=1.8, dash="dot")),
             row=1, col=1,
         )
- 
+
         # Windrichtung als Pfeile. Der Pfeil zeigt in die Richtung, in die
         # der Wind weht — daher +180° gegenüber der meteorologischen
         # "kommt von"-Richtung von Open-Meteo.
@@ -879,7 +880,7 @@ try:
             f"{arome_zeit[j]:%d.%m. %H:%M}<br>{speed_kt[j]:.1f} kt aus {richtung[j]:.0f}°"
             for j in idx
         ]
- 
+
         fig_arome.add_trace(
             go.Scatter(
                 x=pfeil_zeit, y=[1] * len(idx), mode="markers", name="Richtung", showlegend=False,
@@ -889,9 +890,9 @@ try:
             ),
             row=2, col=1,
         )
- 
+
         fig_arome = add_now_and_today_arome(fig_arome)
- 
+
         fig_arome.update_yaxes(
             title_text="Wind (kt)", row=1, col=1,
             showgrid=True, gridcolor="rgba(0,0,0,0.05)", fixedrange=True,
@@ -913,6 +914,6 @@ try:
             dragmode="zoom",
         )
         st.plotly_chart(fig_arome, use_container_width=True, config=PLOTLY_CONFIG)
- 
+
 except requests.exceptions.RequestException as e:
     st.warning(f"⚠️ AROME-Winddaten nicht erreichbar: {e}")
