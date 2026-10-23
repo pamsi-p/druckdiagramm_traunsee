@@ -811,7 +811,7 @@ def hole_arome_wind(lat: float, lon: float, start: date, end: date):
             "models": AROME_MODEL_ID,
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
-            "timezone": "Europe/Vienna",
+            "timezone": "UTC",
         },
         timeout=20,
     )
@@ -823,7 +823,13 @@ try:
     # Nutzt denselben Zeitraum (start_date/end_date), der ganz oben auf der
     # Seite eingestellt wurde.
     arome_data = hole_arome_wind(GMUNDEN_LAT, GMUNDEN_LON, start_date, end_date)
-    arome_zeit = pd.to_datetime(arome_data["hourly"]["time"]).tz_localize("Europe/Vienna")
+    arome_zeit = (
+    pd.to_datetime(
+        arome_data["hourly"]["time"],
+        utc=True
+    )
+    .tz_convert("Europe/Vienna")
+    )
 
     speed = arome_data["hourly"].get("wind_speed_10m")
     boen = arome_data["hourly"].get("wind_gusts_10m")
