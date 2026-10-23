@@ -195,7 +195,7 @@ def _merge_model_columns(raw: pd.DataFrame, variables: list, models: list) -> pd
 def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFrame:
     today = date.today()
     yesterday = today - timedelta(days=1)
-    base_params = dict(latitude=lat, longitude=lon, hourly=HOURLY_VARS, timezone="Europe/Vienna")
+    base_params = dict(latitude=lat, longitude=lon, hourly=HOURLY_VARS, timezone="UTC")
     parts = []
     if start <= yesterday:
         # Vergangenheit: Reanalyse-Archiv, hier gibt es kein Modell zum Wählen.
@@ -215,12 +215,9 @@ def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFra
         parts.append(_merge_model_columns(raw, HOURLY_VARS_LIST, FORECAST_MODELS))
     df = pd.concat(parts).drop_duplicates(subset="time").reset_index(drop=True)
     df["time"] = (
-    pd.to_datetime(df["time"])
-    .dt.tz_localize(
-        "Europe/Vienna",
-        ambiguous="infer"
+    pd.to_datetime(df["time"], utc=True)
+      .dt.tz_convert("Europe/Vienna")
     )
-)
     df.set_index("time", inplace=True)
     return df
 
