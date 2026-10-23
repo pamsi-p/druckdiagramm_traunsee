@@ -214,7 +214,13 @@ def fetch_location(start: date, end: date, lat: float, lon: float) -> pd.DataFra
         raw = pd.DataFrame(data["hourly"])
         parts.append(_merge_model_columns(raw, HOURLY_VARS_LIST, FORECAST_MODELS))
     df = pd.concat(parts).drop_duplicates(subset="time").reset_index(drop=True)
-    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("Europe/Vienna")
+    df["time"] = (
+    pd.to_datetime(df["time"])
+    .dt.tz_localize(
+        "Europe/Vienna",
+        ambiguous="infer"
+    )
+)
     df.set_index("time", inplace=True)
     return df
 
